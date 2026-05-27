@@ -3,14 +3,150 @@ import os
 import io
 import math
 import sqlite3
+import sys
+import platform
+import traceback
+import json
 from datetime import datetime, timedelta, date
 
 import numpy as np
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 import yfinance as yf
 import plotly.graph_objects as go
 import plotly.express as px
+
+
+
+
+# =========================================================
+# ERROR REPORTING / COPY HELPERS
+# =========================================================
+def build_error_report(error_text="", context="Manuell feilrapport"):
+    """Lag en kopierbar feilrapport uten sensitive hemmeligheter."""
+    try:
+        py_ver = sys.version.split()[0]
+    except Exception:
+        py_ver = "ukjent"
+    try:
+        st_ver = st.__version__
+    except Exception:
+        st_ver = "ukjent"
+    try:
+        pd_ver = pd.__version__
+    except Exception:
+        pd_ver = "ukjent"
+    try:
+        yf_ver = yf.__version__
+    except Exception:
+        yf_ver = "ukjent"
+    try:
+        plotly_ver = go.__version__
+    except Exception:
+        try:
+            import plotly
+            plotly_ver = plotly.__version__
+        except Exception:
+            plotly_ver = "ukjent"
+
+    files = []
+    for fp in [WATCHLIST_FILE, PORTFOLIO_FILE, INSIDER_FILE, EARNINGS_FILE, NOTES_FILE, DB_FILE]:
+        try:
+            files.append(f"{fp}: {'finnes' if os.path.exists(fp) else 'mangler'}")
+        except Exception:
+            files.append(f"{fp}: ukjent")
+
+    return f"""InvestAI feilrapport
+Tidspunkt: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Kontekst: {context}
+Python: {py_ver}
+Plattform: {platform.platform()}
+Streamlit: {st_ver}
+Pandas: {pd_ver}
+yfinance: {yf_ver}
+Plotly: {plotly_ver}
+Arbeidsmappe: {os.getcwd()}
+Filer: {', '.join(files)}
+
+Feilmelding / traceback:
+{str(error_text).strip() or 'Ingen feilmelding limt inn.'}
+""".strip()
+
+
+def copy_button_html(text, button_label="📋 Kopier feilrapport"):
+    """Liten HTML/JS-knapp som kopierer tekst til utklippstavlen."""
+    safe_text = json.dumps(text)
+    safe_label = json.dumps(button_label)
+    return f"""
+    <div style="margin: 0.35rem 0 0.75rem 0;">
+      <button id="copyErrBtn" style="
+        width:100%; padding:0.65rem 0.8rem; border-radius:0.7rem;
+        border:1px solid rgba(148,163,184,.45); background:#0f172a;
+        color:#e5e7eb; font-weight:700; cursor:pointer;">
+        {button_label}
+      </button>
+      <div id="copyErrStatus" style="font-size:0.78rem; color:#94a3b8; margin-top:0.35rem;"></div>
+    </div>
+    <script>
+      const btn = document.getElementById('copyErrBtn');
+      const status = document.getElementById('copyErrStatus');
+      const txt = {safe_text};
+      btn.innerText = {safe_label};
+      btn.onclick = async () => {{
+        try {{
+          await navigator.clipboard.writeText(txt);
+          status.innerText = 'Kopiert. Lim inn her i ChatGPT.';
+        }} catch (e) {{
+          status.innerText = 'Kunne ikke kopiere automatisk. Marker teksten under og kopier manuelt.';
+        }}
+      }};
+    </script>
+    """
+
+
+def render_error_report_tool(location="sidebar"):
+    """Vis et felt der brukeren kan lime inn Streamlit-feil og kopiere en ryddig rapport."""
+    ui = st.sidebar if location == "sidebar" else st
+    with ui.expander("🛠 Feilhjelp / kopier feilmelding", expanded=False):
+        ui.caption("Lim inn feilen fra Streamlit her. Trykk kopier og send rapporten i ChatGPT.")
+        err = ui.text_area("Feilmelding", height=160, placeholder="Lim inn Traceback / feilmelding her ...", key=f"error_text_{location}")
+        report = build_error_report(err, context="Manuelt kopiert fra appen")
+        components.html(copy_button_html(report), height=72)
+        ui.download_button(
+            "⬇️ Last ned feilrapport",
+            data=report,
+            file_name="investai_feilrapport.txt",
+            mime="text/plain",
+            key=f"download_error_report_{location}",
+        )
+        ui.code(report[:4000], language="text")
+
+
+def render_exception_box(exc, context="Ukjent feil"):
+    """Vis en pen feilboks med kopierbar rapport i stedet for hard crash."""
+    tb = traceback.format_exc()
+    report = build_error_report(tb, context=context)
+    st.error(f"Det oppstod en feil i: {context}")
+    with st.expander("Vis / kopier teknisk feilrapport", expanded=True):
+        components.html(copy_button_html(report), height=72)
+        st.download_button(
+            "⬇️ Last ned feilrapport",
+            data=report,
+            file_name="investai_feilrapport.txt",
+            mime="text/plain",
+            key=f"download_exception_{abs(hash(report))}",
+        )
+        st.code(report, language="text")
+
+
+def safe_render_stock_card(row, context="Aksjekort"):
+    try:
+        return render_stock_card(row)
+    except Exception as exc:
+        ticker = row.get("Ticker", row.get("ticker", "ukjent")) if hasattr(row, "get") else "ukjent"
+        render_exception_box(exc, context=f"{context} · {ticker}")
+        return ""
 
 
 # =========================================================
@@ -1367,6 +1503,7 @@ init_db()
 
 st.sidebar.title("📈 InvestAI v8")
 st.sidebar.caption("SQLite, scorehistorikk, market regime, porteføljerisiko og conviction picks.")
+render_error_report_tool("sidebar")
 
 theme = st.sidebar.radio("Tema", ["Mørk", "Lys"], index=0)
 plotly_template = "plotly_dark" if theme == "Mørk" else "plotly_white"
@@ -1645,7 +1782,7 @@ with tabs[0]:
     card_cols = st.columns(2)
     for i, (_, r) in enumerate(data.sort_values("Strategy Score", ascending=False).head(8).iterrows()):
         with card_cols[i % 2]:
-            st.markdown(render_stock_card(r), unsafe_allow_html=True)
+            st.markdown(safe_render_stock_card(r, "Aksjekort"), unsafe_allow_html=True)
 
     
     st.markdown("### 🧠 Top Ideas Engine")
@@ -1705,7 +1842,7 @@ with tabs[0]:
     e1, e2 = st.columns([1.2, .8])
 
     with e1:
-        st.markdown(render_stock_card(explain_row), unsafe_allow_html=True)
+        st.markdown(safe_render_stock_card(explain_row, "Scoreforklaring"), unsafe_allow_html=True)
 
     with e2:
         st.markdown("#### Scoreforklaring")
@@ -1750,7 +1887,7 @@ with tabs[1]:
     cols = st.columns(2)
     for i, (_, r) in enumerate(conviction.iterrows()):
         with cols[i % 2]:
-            st.markdown(render_stock_card(r), unsafe_allow_html=True)
+            st.markdown(safe_render_stock_card(r, "Aksjekort"), unsafe_allow_html=True)
 
 
 with tabs[2]:
