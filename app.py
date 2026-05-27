@@ -279,7 +279,7 @@ STRATEGY_WEIGHTS = {
 # =========================================================
 # STYLE / MOBILE UI
 # =========================================================
-def inject_css():
+def inject_css(theme="Mørk"):
     st.markdown("""
     <style>
     :root {
@@ -635,6 +635,64 @@ def inject_css():
 
     </style>
     """, unsafe_allow_html=True)
+
+    if theme == "Lys":
+        st.markdown("""
+        <style>
+        :root {
+            --bg: #f8fafc;
+            --panel: rgba(255,255,255,.94);
+            --panel2: rgba(241,245,249,.96);
+            --border: rgba(15,23,42,.14);
+            --text: #0f172a;
+            --muted: #475569;
+            --cyan: #0284c7;
+            --green: #16a34a;
+            --red: #dc2626;
+            --yellow: #d97706;
+        }
+        html, body, [class*="css"], .stApp { color: #0f172a !important; }
+        .stApp {
+            background:
+                radial-gradient(circle at 12% 0%, rgba(14,165,233,.16), transparent 32%),
+                radial-gradient(circle at 88% 0%, rgba(34,197,94,.10), transparent 28%),
+                linear-gradient(180deg, #ffffff 0%, #f8fafc 45%, #eef2f7 100%) !important;
+        }
+        section[data-testid="stSidebar"] {
+            background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(241,245,249,.98)) !important;
+            border-right: 1px solid rgba(15,23,42,.12) !important;
+        }
+        .hero-title {
+            background: linear-gradient(90deg, #0f172a, #0284c7 45%, #16a34a 95%) !important;
+            -webkit-background-clip: text !important;
+            -webkit-text-fill-color: transparent !important;
+        }
+        .hero-subtitle, .subtle, .mini-label, .leader-sub, .quad-text, .tape-label { color: #475569 !important; }
+        div[data-testid="stMetric"], .terminal-card, .stock-card, .dash-panel {
+            background: linear-gradient(145deg, rgba(255,255,255,.96), rgba(241,245,249,.94)) !important;
+            border: 1px solid rgba(15,23,42,.13) !important;
+            box-shadow: 0 16px 38px rgba(15,23,42,.08) !important;
+            color: #0f172a !important;
+        }
+        .mini-stat, .tape-item, .quad {
+            background: rgba(248,250,252,.92) !important;
+            border: 1px solid rgba(15,23,42,.10) !important;
+            color: #0f172a !important;
+        }
+        .stTabs [data-baseweb="tab"] {
+            background: rgba(255,255,255,.92) !important;
+            color: #0f172a !important;
+            border: 1px solid rgba(15,23,42,.13) !important;
+        }
+        .stTabs [aria-selected="true"] {
+            background: linear-gradient(135deg, rgba(14,165,233,.16), rgba(34,197,94,.10)) !important;
+            border-color: rgba(2,132,199,.35) !important;
+        }
+        .alert-card { background: rgba(14,165,233,.08) !important; }
+        .danger-card { background: rgba(239,68,68,.08) !important; }
+        .neutral { background: rgba(100,116,139,.12) !important; color: #334155 !important; }
+        </style>
+        """, unsafe_allow_html=True)
 
 
 # =========================================================
@@ -1618,6 +1676,7 @@ render_error_report_tool("sidebar")
 
 theme = st.sidebar.radio("Tema", ["Mørk", "Lys"], index=0)
 plotly_template = "plotly_dark" if theme == "Mørk" else "plotly_white"
+inject_css(theme)
 
 strategy = st.sidebar.selectbox("Strategi / scoremotor", list(STRATEGY_WEIGHTS.keys()), index=0)
 
@@ -1787,76 +1846,85 @@ def formatted(df):
     return styler.format(formats)
 
 with tabs[0]:
-    st.subheader("Dashboard")
+    st.subheader("🏠 Dashboard")
+    st.caption("Ryddig sammendrag av marked, kandidater, risiko og neste aksjer å undersøke. Detaljer ligger i fanene ved siden av.")
 
-    # Native Streamlit dashboard header: avoids raw HTML rendering issues on Streamlit Cloud/mobile.
-    st.markdown("### 🌍 Markedspuls")
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Market regime", regime)
-    m2.metric("Risk-on score", f"{risk_on_score:.0f}/100")
-    m3.metric("Sterkeste sektor", best_sector)
-    m4.metric("Top pick", top["Ticker"])
-    st.caption(regime_comment)
+    # -----------------------------------------------------
+    # CLEAN EXECUTIVE SUMMARY
+    # -----------------------------------------------------
+    st.markdown("### 1) Markedsbilde")
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Regime", regime)
+    k2.metric("Risk-on", f"{risk_on_score:.0f}/100")
+    k3.metric("Sterkeste sektor", best_sector)
+    k4.metric("Top pick", top["Ticker"])
+    st.info(regime_comment)
 
     if macro_df is not None and not macro_df.empty:
-        tape_assets = ["S&P 500", "Nasdaq", "Olje Brent", "VIX", "USD/NOK", "Bitcoin"]
-        tape = macro_df[macro_df["Asset"].isin(tape_assets)].head(6)
-        tape_cols = st.columns(min(6, max(1, len(tape))))
-        for i, (_, r) in enumerate(tape.iterrows()):
-            with tape_cols[i % len(tape_cols)]:
-                st.metric(
-                    r["Asset"],
-                    f"{float(r['Siste']):.2f}",
-                    f"{float(r['1m %']):+.1f}% 1m",
-                )
+        with st.expander("Vis markedsdata", expanded=False):
+            tape_assets = ["S&P 500", "Nasdaq", "Olje Brent", "VIX", "USD/NOK", "Bitcoin"]
+            tape = macro_df[macro_df["Asset"].isin(tape_assets)].head(6)
+            cols = st.columns(min(3, max(1, len(tape))))
+            for i, (_, r) in enumerate(tape.iterrows()):
+                with cols[i % len(cols)]:
+                    st.metric(r["Asset"], f"{float(r['Siste']):.2f}", f"{float(r['1m %']):+.1f}% 1m")
 
-    st.markdown("### 📌 Screeningstatus")
-    s1, s2, s3, s4, s5 = st.columns(5)
-    s1.metric("Kjøp", int((data["Signal"] == "KJØP").sum()))
-    s2.metric("Hold", int((data["Signal"] == "HOLD").sum()))
-    s3.metric("Selg", int((data["Signal"] == "SELG").sum()))
-    s4.metric("Høy risiko", int((data["Risk Score"] >= 70).sum()))
-    s5.metric("Snitt score", f"{data['Strategy Score'].mean():.1f}")
+    # -----------------------------------------------------
+    # TOP IDEAS - SIMPLE AND ACTIONABLE
+    # -----------------------------------------------------
+    st.markdown("### 2) Dagens viktigste kandidater")
+    top_conv = data.sort_values("Strategy Score", ascending=False).head(5).copy()
+    rockets = data.sort_values("Rocket Score", ascending=False).head(5).copy()
+    defensive = data.sort_values(["Risk Score", "Strategy Score"], ascending=[True, False]).head(5).copy()
 
-    # Desktop-style panels using native containers
-    st.markdown("### 🏆 Signalpanel")
-    p1, p2, p3 = st.columns(3)
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        st.markdown("#### 🏆 Høyest conviction")
+        for _, r in top_conv.iterrows():
+            st.markdown(f"""
+            <div class="terminal-card">
+                <b>{r['Ticker']}</b> · {r['Selskap']}<br>
+                <span class="subtle">Score {r['Strategy Score']:.1f} · Risiko {r['Risk Score']:.1f} · {r['Signal']}</span><br>
+                <span class="subtle">{r['Forklaring']}</span>
+            </div>
+            """, unsafe_allow_html=True)
+    with col_b:
+        st.markdown("#### 🚀 Rakettkandidater")
+        for _, r in rockets.iterrows():
+            st.markdown(f"""
+            <div class="terminal-card">
+                <b>{r['Ticker']}</b> · {r['Selskap']}<br>
+                <span class="subtle">Rocket {r['Rocket Score']:.1f} · 1 år {r['1 år %']:+.1f}% · Risiko {r['Risk Score']:.1f}</span><br>
+                <span class="subtle">{r['Trend']} trend</span>
+            </div>
+            """, unsafe_allow_html=True)
+    with col_c:
+        st.markdown("#### 🛡 Lavere risiko")
+        for _, r in defensive.iterrows():
+            st.markdown(f"""
+            <div class="terminal-card">
+                <b>{r['Ticker']}</b> · {r['Selskap']}<br>
+                <span class="subtle">Risiko {r['Risk Score']:.1f} · Score {r['Strategy Score']:.1f} · Verdi {r['Value Score']:.1f}</span><br>
+                <span class="subtle">{r['Signal']}</span>
+            </div>
+            """, unsafe_allow_html=True)
 
-    with p1:
-        st.markdown("#### Top Conviction")
-        top_conv = data.sort_values("Strategy Score", ascending=False).head(6)
-        st.dataframe(
-            formatted(top_conv[["Ticker", "Signal", "Strategy Score", "Risk Score", "Trend"]]),
-            use_container_width=True,
-            height=260,
-        )
+    # -----------------------------------------------------
+    # CLEAN RISK/REWARD SNAPSHOT
+    # -----------------------------------------------------
+    st.markdown("### 3) Risiko og muligheter")
+    r1, r2, r3, r4 = st.columns(4)
+    r1.metric("Kjøp-signaler", int((data["Signal"] == "KJØP").sum()))
+    r2.metric("Breakouts", int(data["Breakout"].sum()))
+    r3.metric("Høy risiko", int((data["Risk Score"] >= 70).sum()))
+    r4.metric("Snitt score", f"{data['Strategy Score'].mean():.1f}")
 
-    with p2:
-        st.markdown("#### Rakett-radar")
-        rockets = data.sort_values("Rocket Score", ascending=False).head(6)
-        st.dataframe(
-            formatted(rockets[["Ticker", "Signal", "Rocket Score", "Risk Score", "Trend"]]),
-            use_container_width=True,
-            height=260,
-        )
-
-    with p3:
-        st.markdown("#### Risiko")
-        risky = data.sort_values("Risk Score", ascending=False).head(6)
-        st.dataframe(
-            formatted(risky[["Ticker", "Signal", "Risk Score", "Rocket Score", "Trend"]]),
-            use_container_width=True,
-            height=260,
-        )
-
-    st.markdown("### 🧭 Risk / Reward og sektorbilde")
-    c1, c2 = st.columns([1.1, .9])
-
-    with c1:
-        data_dash_plot = data.copy()
-        data_dash_plot["Boblestørrelse"] = positive_size_series(data_dash_plot["Rocket Score"], default=20)
+    left, right = st.columns([1.05, .95])
+    with left:
+        plot_df = data.copy()
+        plot_df["Boblestørrelse"] = positive_size_series(plot_df["Rocket Score"], default=18)
         fig = px.scatter(
-            data_dash_plot,
+            plot_df,
             x="Risk Score",
             y="Strategy Score",
             size="Boblestørrelse",
@@ -1864,124 +1932,49 @@ with tabs[0]:
             hover_name="Ticker",
             hover_data=["Selskap", "Sektor", "Rocket Score", "Forklaring"],
             template=plotly_template,
-            title="Risk / Reward Map",
+            title="Risk / Reward - rask oversikt",
         )
         fig.add_vline(x=70, line_dash="dash")
         fig.add_hline(y=70, line_dash="dash")
-        fig.update_layout(height=430, margin=dict(l=10, r=10, t=45, b=10))
+        fig.update_layout(height=360, margin=dict(l=10, r=10, t=45, b=10))
         st.plotly_chart(fig, use_container_width=True, config=chart_config)
-
-    with c2:
+    with right:
         sector_dash = data.groupby("Sektor", as_index=False).agg({
             "Strategy Score": "mean",
             "Rocket Score": "mean",
             "Risk Score": "mean",
             "3 mnd %": "mean"
-        }).sort_values("Strategy Score", ascending=False).head(14)
-        fig = px.imshow(
-            sector_dash[["Strategy Score", "Rocket Score", "Risk Score", "3 mnd %"]].T,
-            x=sector_dash["Sektor"],
-            y=["Strategy", "Rocket", "Risk", "3m"],
-            color_continuous_scale="Viridis",
-            template=plotly_template,
-            title="Sektor heatmap",
-        )
-        fig.update_layout(height=430, margin=dict(l=10, r=10, t=45, b=10))
-        st.plotly_chart(fig, use_container_width=True, config=chart_config)
-
-    st.markdown("### 📱 Kortvisning")
-    card_cols = st.columns(2)
-    for i, (_, r) in enumerate(data.sort_values("Strategy Score", ascending=False).head(8).iterrows()):
-        with card_cols[i % 2]:
-            st.markdown(safe_render_stock_card(r, "Aksjekort"), unsafe_allow_html=True)
-
-    
-    st.markdown("### 🧠 Top Ideas Engine")
-
-    idea1, idea2, idea3 = st.columns(3)
-
-    with idea1:
-        st.markdown("#### Beste risk/reward")
-        rr_df = data.copy()
-        rr_df["RR"] = rr_df["Strategy Score"] / rr_df["Risk Score"].clip(lower=1)
+        }).sort_values("Strategy Score", ascending=False).head(10)
+        st.markdown("#### Sektoroppsummering")
         st.dataframe(
-            formatted(
-                rr_df.sort_values("RR", ascending=False).head(5)[
-                    ["Ticker", "Signal", "Strategy Score", "Risk Score", "Rocket Score"]
-                ]
-            ),
+            formatted(sector_dash.rename(columns={"3 mnd %": "3 mnd"})),
             use_container_width=True,
-            height=220,
+            height=360,
         )
 
-    with idea2:
-        st.markdown("#### Rakettkandidater")
-        rockets = data.sort_values("Rocket Score", ascending=False).head(5)
-        st.dataframe(
-            formatted(
-                rockets[
-                    ["Ticker", "Signal", "Rocket Score", "Risk Score", "1 år %"]
-                ]
-            ),
-            use_container_width=True,
-            height=220,
-        )
+    # -----------------------------------------------------
+    # PER STOCK EXECUTIVE BRIEF
+    # -----------------------------------------------------
+    st.markdown("### 4) Aksjeoppsummering")
+    summary_ticker = st.selectbox("Velg aksje for kort sammendrag", data["Ticker"].tolist(), key="dashboard_summary_ticker")
+    summary_row = data[data["Ticker"] == summary_ticker].iloc[0]
+    sc = scenario_estimates(summary_row)
+    b1, b2 = st.columns([1.1, .9])
+    with b1:
+        st.markdown(safe_render_stock_card(summary_row, "Dashboard aksjeoppsummering"), unsafe_allow_html=True)
+    with b2:
+        st.markdown("#### Hvorfor følge denne?")
+        try:
+            st.code(explain_score(summary_row))
+        except Exception:
+            st.write(summary_row.get("Forklaring", "Ingen forklaring tilgjengelig."))
+        c_bull, c_base, c_bear = st.columns(3)
+        c_bull.metric("Bull", f"+{sc['bull']:.0f}%")
+        c_base.metric("Base", f"+{sc['base']:.0f}%")
+        c_bear.metric("Bear", f"{sc['bear']:.0f}%")
 
-    with idea3:
-        st.markdown("#### Defensive kandidater")
-        defensive = data.sort_values(["Risk Score", "Strategy Score"], ascending=[True, False]).head(5)
-        st.dataframe(
-            formatted(
-                defensive[
-                    ["Ticker", "Signal", "Risk Score", "Strategy Score", "Value Score"]
-                ]
-            ),
-            use_container_width=True,
-            height=220,
-        )
-
-    st.markdown("### 🔍 Explain Score")
-
-    explain_ticker = st.selectbox(
-        "Velg aksje",
-        data["Ticker"].tolist(),
-        key="explain_score_select"
-    )
-
-    explain_row = data[data["Ticker"] == explain_ticker].iloc[0]
-
-    e1, e2 = st.columns([1.2, .8])
-
-    with e1:
-        st.markdown(safe_render_stock_card(explain_row, "Scoreforklaring"), unsafe_allow_html=True)
-
-    with e2:
-        st.markdown("#### Scoreforklaring")
-        st.code(explain_score(explain_row))
-
-        scenario = scenario_estimates(explain_row)
-
-        st.metric("Bull case", f"+{scenario['bull']:.0f}%")
-        st.metric("Base case", f"+{scenario['base']:.0f}%")
-        st.metric("Bear case", f"{scenario['bear']:.0f}%")
-        st.metric("Risk/Reward", f"{scenario['rr']:.1f}x")
-
-
-    st.markdown("### 📊 Full signaltabell")
-    st.dataframe(formatted(data[show_cols]), use_container_width=True, height=460)
-
-    st.markdown("### Dagens movers")
-    movers_col1, movers_col2 = st.columns(2)
-    with movers_col1:
-        winners = data.sort_values("Dagsendring %", ascending=False).head(8)
-        fig = px.bar(winners, x="Ticker", y="Dagsendring %", color="Dagsendring %", template=plotly_template, title="Vinnere")
-        fig.update_layout(height=320, margin=dict(l=10, r=10, t=40, b=10))
-        st.plotly_chart(fig, use_container_width=True, config=chart_config)
-    with movers_col2:
-        losers = data.sort_values("Dagsendring %", ascending=True).head(8)
-        fig = px.bar(losers, x="Ticker", y="Dagsendring %", color="Dagsendring %", template=plotly_template, title="Tapere")
-        fig.update_layout(height=320, margin=dict(l=10, r=10, t=40, b=10))
-        st.plotly_chart(fig, use_container_width=True, config=chart_config)
+    with st.expander("Vis full signaltabell", expanded=False):
+        st.dataframe(formatted(data[show_cols]), use_container_width=True, height=460)
 
 with tabs[1]:
     st.subheader("Top Conviction Picks")
