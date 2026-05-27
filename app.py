@@ -1,4 +1,13 @@
 
+
+
+# --- Error helper ---
+import traceback
+def show_error(e):
+    st.error("En feil oppstod i appen.")
+    err = traceback.format_exc()
+    st.code(err, language="python")
+    st.download_button("Last ned feillogg", err, file_name="investai_error_log.txt")
 import os
 import io
 import math
