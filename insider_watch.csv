@@ -1,0 +1,4 @@
+ticker,date,person,type,value_nok,comment
+KOG.OL,2026-05-10,Eksempel insider,Kjøp,250000,Eksempeldata
+PHO.OL,2026-05-11,Eksempel styremedlem,Kjøp,90000,Eksempeldata
+NEL.OL,2026-05-12,Eksempel primærinnsider,Salg,120000,Eksempeldata

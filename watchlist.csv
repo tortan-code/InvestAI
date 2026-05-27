@@ -1,0 +1,69 @@
+ticker,name,sector,market,segment
+EQNR.OL,Equinor,Energi,Oslo Børs,Hovedliste
+DNB.OL,DNB,Finans,Oslo Børs,Hovedliste
+KOG.OL,Kongsberg Gruppen,Forsvar / Teknologi,Oslo Børs,Hovedliste
+MOWI.OL,Mowi,Sjømat,Oslo Børs,Hovedliste
+SALM.OL,SalMar,Sjømat,Oslo Børs,Hovedliste
+ORK.OL,Orkla,Defensiv konsum,Oslo Børs,Hovedliste
+TEL.OL,Telenor,Telekom,Oslo Børs,Hovedliste
+NHY.OL,Norsk Hydro,Materialer,Oslo Børs,Hovedliste
+YAR.OL,Yara,Gjødsel / Industri,Oslo Børs,Hovedliste
+AKRBP.OL,Aker BP,Energi,Oslo Børs,Hovedliste
+SUBC.OL,Subsea 7,Offshore,Oslo Børs,Hovedliste
+TOM.OL,Tomra,Industri / Miljøteknologi,Oslo Børs,Hovedliste
+AUTO.OL,AutoStore,Robotikk / Lagerautomasjon,Oslo Børs,Hovedliste
+NOD.OL,Nordic Semiconductor,Semiconductor / IoT,Oslo Børs,Hovedliste
+KIT.OL,Kitron,Industri / EMS,Oslo Børs,Hovedliste
+ATEA.OL,Atea,IT-tjenester,Oslo Børs,Hovedliste
+BOUV.OL,Bouvet,IT-konsulent,Oslo Børs,Hovedliste
+MEDI.OL,Medistim,Medtech,Oslo Børs,Hovedliste
+PHO.OL,Photocure,Medtech,Oslo Børs,Hovedliste
+HEX.OL,Hexagon Composites,Energi / Hydrogen,Oslo Børs,Hovedliste
+AFG.OL,AF Gruppen,Bygg / Infrastruktur,Oslo Børs,Hovedliste
+VEI.OL,Veidekke,Bygg / Infrastruktur,Oslo Børs,Hovedliste
+SCHB.OL,Schibsted B,Media / Marketplace,Oslo Børs,Hovedliste
+GJF.OL,Gjensidige Forsikring,Forsikring,Oslo Børs,Hovedliste
+STB.OL,Storebrand,Finans / Forsikring,Oslo Børs,Hovedliste
+ENTRA.OL,Entra,Eiendom,Oslo Børs,Hovedliste
+BAKKA.OL,Bakkafrost,Sjømat,Oslo Børs,Hovedliste
+LSG.OL,Lerøy Seafood,Sjømat,Oslo Børs,Hovedliste
+WAWI.OL,Wallenius Wilhelmsen,Shipping,Oslo Børs,Hovedliste
+MPCC.OL,MPC Container Ships,Shipping,Oslo Børs,Hovedliste
+HAUTO.OL,Höegh Autoliners,Shipping,Oslo Børs,Hovedliste
+BELCO.OL,Belships,Shipping,Oslo Børs,Hovedliste
+ODF.OL,Odfjell A,Shipping,Oslo Børs,Hovedliste
+ELK.OL,Elkem,Materialer,Oslo Børs,Hovedliste
+SCATC.OL,Scatec,Fornybar energi,Oslo Børs,Hovedliste
+BOR.OL,Borr Drilling,Offshore drilling,Oslo Børs,Hovedliste
+SOFF.OL,Solstad Offshore,Offshore,Oslo Børs,Hovedliste
+DOFG.OL,DOF Group,Offshore,Oslo Børs,Hovedliste
+VAR.OL,Vår Energi,Energi,Oslo Børs,Hovedliste
+NAS.OL,Norwegian Air Shuttle,Luftfart,Oslo Børs,Hovedliste
+SATS.OL,SATS,Konsum / Trening,Oslo Børs,Hovedliste
+XXL.OL,XXL,Retail / Turnaround,Oslo Børs,Hovedliste
+AIRX.OL,Airthings,IoT / Smart buildings,Oslo,Euronext Growth
+ZAP.OL,Zaptec,EV-lading,Oslo,Euronext Growth
+NEL.OL,Nel,Hydrogen,Oslo,Hovedliste
+HPUR.OL,Hexagon Purus,Hydrogen / Mobilitet,Oslo,Euronext Growth
+AGLX.OL,Agilyx,Miljøteknologi,Oslo,Euronext Growth
+ACC.OL,Aker Carbon Capture,CCS / Miljøteknologi,Oslo,Hovedliste
+AKBM.OL,Aker BioMarine,Biomarine,Oslo,Hovedliste
+CLOUD.OL,Cloudberry Clean Energy,Fornybar energi,Oslo,Hovedliste
+HBC.OL,Hofseth BioCare,Biotech / Biomarine,Oslo,Hovedliste
+NEXT.OL,NEXT Biometrics,Biometri / Teknologi,Oslo,Hovedliste
+IDEX.OL,IDEX Biometrics,Biometri / Teknologi,Oslo,Hovedliste
+QFR.OL,Q-Free,Transportteknologi,Oslo,Hovedliste
+CRAYN.OL,Crayon,Software / IT,Oslo,Hovedliste
+TECH.OL,Techstep,IT / Mobile,Oslo,Hovedliste
+ARR.OL,Arribatec,IT-konsulent,Oslo,Euronext Growth
+FRO.OL,Frontline,Shipping / Tank,Oslo Børs,Hovedliste
+2020.OL,2020 Bulkers,Shipping / Dry bulk,Oslo,Hovedliste
+NOL.OL,Northern Ocean,Offshore drilling,Oslo,Hovedliste
+ARCH.OL,Archer,Oil service,Oslo,Hovedliste
+PEN.OL,Panoro Energy,Energi / E&P,Oslo,Hovedliste
+BWE.OL,BW Energy,Energi / E&P,Oslo,Hovedliste
+QEC.OL,Questerre Energy,Energi / Høy risiko,Oslo,Hovedliste
+AAPL,Apple,US Big Tech,USA,USA
+MSFT,Microsoft,US Big Tech / AI,USA,USA
+NVDA,Nvidia,AI / Semiconductor,USA,USA
+ASML,ASML,Semiconductor Equipment,Europa,Europa
