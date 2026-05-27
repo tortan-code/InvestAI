@@ -1349,6 +1349,117 @@ def score_stock(row, strategy, regime):
 
 
 
+
+def explain_score(row):
+    """Returnerer en enkel, kopierbar forklaring av hvorfor en aksje scorer slik den gjør.
+    Robust mot manglende kolonner/NaN slik at appen ikke krasjer på Streamlit Cloud.
+    """
+    def sf(key, default=0.0):
+        try:
+            val = row.get(key, default)
+            if pd.isna(val):
+                return default
+            return float(val)
+        except Exception:
+            return default
+
+    def ss(key, default=""):
+        try:
+            val = row.get(key, default)
+            if pd.isna(val):
+                return default
+            return str(val)
+        except Exception:
+            return default
+
+    ticker = ss("Ticker", ss("ticker", "Ukjent"))
+    company = ss("Selskap", ss("name", ticker))
+    sector = ss("Sektor", ss("sector", "Ukjent sektor"))
+    signal = ss("Signal", "HOLD")
+
+    metrics = {
+        "Strategi-score": sf("Strategy Score"),
+        "Investment Score": sf("Investment Score"),
+        "Rocket Score": sf("Rocket Score"),
+        "Momentum Score": sf("Momentum Score"),
+        "Value Score": sf("Value Score"),
+        "Quality Score": sf("Quality Score"),
+        "Growth Score": sf("Growth Score"),
+        "Catalyst Score": sf("Catalyst Score"),
+        "Risk Score": sf("Risk Score"),
+        "Teknisk Score": sf("Teknisk Score"),
+    }
+
+    strengths = []
+    risks = []
+
+    if metrics["Momentum Score"] >= 70:
+        strengths.append("sterkt kursmomentum")
+    elif metrics["Momentum Score"] <= 35:
+        risks.append("svakt momentum")
+
+    if metrics["Value Score"] >= 70:
+        strengths.append("attraktiv verdsettelse relativt til modellen")
+    elif metrics["Value Score"] <= 35:
+        risks.append("krevende verdsettelse")
+
+    if metrics["Quality Score"] >= 70:
+        strengths.append("høy kvalitet / lønnsomhet")
+    elif metrics["Quality Score"] <= 35:
+        risks.append("svak kvalitet eller presset lønnsomhet")
+
+    if metrics["Growth Score"] >= 70:
+        strengths.append("sterk vekstprofil")
+    elif metrics["Growth Score"] <= 35:
+        risks.append("svak vekstprofil")
+
+    if metrics["Catalyst Score"] >= 70:
+        strengths.append("tydelige katalysatorer")
+
+    if metrics["Risk Score"] >= 70:
+        risks.append("høyt risikonivå")
+    elif metrics["Risk Score"] <= 35:
+        strengths.append("relativt lav modellert risiko")
+
+    if bool(row.get("Breakout", False)):
+        strengths.append("mulig teknisk breakout")
+    if bool(row.get("Volum Spike", False)):
+        strengths.append("uvanlig volum / økt markedsinteresse")
+
+    forklaring = ss("Forklaring", "")
+    if forklaring:
+        strengths.append(forklaring)
+
+    strengths_txt = "\n".join([f"- {x}" for x in strengths[:7]]) or "- Ingen tydelige styrker fra modellen akkurat nå."
+    risks_txt = "\n".join([f"- {x}" for x in risks[:7]]) or "- Ingen store røde flagg fra modellen, men sjekk alltid gjeld, kontantstrøm og nyheter manuelt."
+
+    return f"""{ticker} – {company}
+Sektor: {sector}
+Signal: {signal}
+
+Hovedscore:
+- Strategi-score: {metrics['Strategi-score']:.0f}/100
+- Investment Score: {metrics['Investment Score']:.0f}/100
+- Rocket Score: {metrics['Rocket Score']:.0f}/100
+- Risk Score: {metrics['Risk Score']:.0f}/100
+
+Delkomponenter:
+- Momentum: {metrics['Momentum Score']:.0f}/100
+- Verdi: {metrics['Value Score']:.0f}/100
+- Kvalitet: {metrics['Quality Score']:.0f}/100
+- Vekst: {metrics['Growth Score']:.0f}/100
+- Katalysatorer: {metrics['Catalyst Score']:.0f}/100
+- Teknisk: {metrics['Teknisk Score']:.0f}/100
+
+Hvorfor aksjen scorer bra/svakt:
+{strengths_txt}
+
+Viktigste risikoer / sjekkpunkter:
+{risks_txt}
+
+Merk: Dette er en kvantitativ screeningmodell, ikke en kjøpsanbefaling. Bruk den som startpunkt for videre analyse.
+"""
+
 def signal_class(sig):
     return "buy" if sig == "KJØP" else "hold" if sig == "HOLD" else "sell"
 
