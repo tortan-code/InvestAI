@@ -1,0 +1,2 @@
+# InvestAI
+Markedsanalyse av aksjemarkedet
