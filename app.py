@@ -1,13 +1,4 @@
 
-
-
-# --- Error helper ---
-import traceback
-def show_error(e):
-    st.error("En feil oppstod i appen.")
-    err = traceback.format_exc()
-    st.code(err, language="python")
-    st.download_button("Last ned feillogg", err, file_name="investai_error_log.txt")
 import os
 import io
 import math
@@ -32,15 +23,13 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-DATA_DIR = "data"
-DB_FILE = os.path.join(DATA_DIR, "investai.db")
-WATCHLIST_FILE = os.path.join(DATA_DIR, "watchlist.csv")
-PORTFOLIO_FILE = os.path.join(DATA_DIR, "portfolio.csv")
-INSIDER_FILE = os.path.join(DATA_DIR, "insider_watch.csv")
-EARNINGS_FILE = os.path.join(DATA_DIR, "earnings_calendar.csv")
-NOTES_FILE = os.path.join(DATA_DIR, "notes.csv")
-
-os.makedirs(DATA_DIR, exist_ok=True)
+DATA_DIR = "."  # Flat GitHub/Streamlit structure: datafiler ligger sammen med app.py
+DB_FILE = "investai.db"
+WATCHLIST_FILE = "watchlist.csv"
+PORTFOLIO_FILE = "portfolio.csv"
+INSIDER_FILE = "insider_watch.csv"
+EARNINGS_FILE = "earnings_calendar.csv"
+NOTES_FILE = "notes.csv"
 
 DEFAULT_TICKERS = [
     # Oslo Børs large/mid/quality
@@ -646,6 +635,69 @@ def safe_float(x, default=0.0):
 
 def clamp(x, lo=0, hi=100):
     return max(lo, min(hi, x))
+
+
+
+def scenario_estimates(row):
+    """Simple scenario engine used by stock cards and decision intelligence.
+    Returns expected upside/downside estimates in percent and a rough reward/risk ratio.
+    Robust against missing/NaN values so Streamlit Cloud does not crash.
+    """
+    strategy = safe_float(row.get("Strategy Score", 50), 50)
+    rocket = safe_float(row.get("Rocket Score", 50), 50)
+    investment = safe_float(row.get("Investment Score", 50), 50)
+    risk = safe_float(row.get("Risk Score", 50), 50)
+    momentum = safe_float(row.get("Momentum Score", row.get("Teknisk Score", 50)), 50)
+    value = safe_float(row.get("Value Score", 50), 50)
+
+    # Upside estimate: higher for strong strategy/rocket/value/momentum, penalized by risk.
+    base = (0.34 * strategy + 0.24 * investment + 0.22 * rocket + 0.10 * momentum + 0.10 * value) - 50
+    base = clamp(base * 1.35, -25, 90)
+
+    bull = base + 18 + max(0, rocket - 55) * 0.55 + max(0, momentum - 55) * 0.20
+    bull = clamp(bull, 5, 180)
+
+    bear = -10 - (risk * 0.55) + max(0, value - 60) * 0.08
+    bear = clamp(bear, -85, -5)
+
+    rr = abs(bull / bear) if bear != 0 else 0
+    return {"bull": bull, "base": base, "bear": bear, "rr": rr}
+
+
+def conviction_label(score):
+    """Human-readable conviction label for card headers."""
+    score = safe_float(score, 0)
+    if score >= 80:
+        return "Svært sterk kandidat"
+    if score >= 68:
+        return "Sterk kandidat"
+    if score >= 55:
+        return "Interessant å følge"
+    if score >= 43:
+        return "Nøytral / avvent"
+    return "Svak kandidat"
+
+
+def build_thesis(row):
+    """Compact thesis text explaining the score in plain Norwegian."""
+    parts = []
+    if safe_float(row.get("Rocket Score", 0)) >= 70:
+        parts.append("høyt rakettpotensial")
+    if safe_float(row.get("Momentum Score", row.get("Teknisk Score", 0))) >= 65:
+        parts.append("positiv markedstrend")
+    if safe_float(row.get("Value Score", 0)) >= 65:
+        parts.append("attraktiv verdsettelse")
+    if safe_float(row.get("Quality Score", 0)) >= 65:
+        parts.append("god kvalitet")
+    if safe_float(row.get("Risk Score", 0)) >= 75:
+        parts.append("men høy risiko")
+    if safe_float(row.get("Risk Score", 100)) <= 40:
+        parts.append("lavere risikoprofil")
+    if not parts:
+        signal = row.get("Signal", "HOLD")
+        trend = row.get("Trend", "Blandet")
+        parts.append(f"balansert case med signal {signal} og trend {trend}")
+    return ", ".join(parts).capitalize() + "."
 
 
 
