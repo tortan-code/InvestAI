@@ -26,3 +26,7 @@ Start lokalt:
 python -m pip install -r requirements.txt
 python -m streamlit run app.py
 ```
+
+
+## v8.6 Oslo Børs Universe
+Denne versjonen inkluderer `oslo_universe.csv` og `watchlist.csv` med en bred liste over Oslo Børs / Oslo-relaterte tickere. Appen merger automatisk `watchlist.csv` med `oslo_universe.csv`, slik at du kan beholde egne aksjer og samtidig screene bredt. Gratisdata via yfinance kan mangle enkelte tickere, så ugyldige/manglende tickere hoppes over med advarsel i appen.

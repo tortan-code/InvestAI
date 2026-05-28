@@ -153,7 +153,7 @@ def safe_render_stock_card(row, context="Aksjekort"):
 # CONFIG
 # =========================================================
 st.set_page_config(
-    page_title="InvestAI v8 Decision Intelligence",
+    page_title="InvestAI v8.6 Oslo Børs Screener",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -162,6 +162,7 @@ st.set_page_config(
 DATA_DIR = "."  # Flat GitHub/Streamlit structure: datafiler ligger sammen med app.py
 DB_FILE = "investai.db"
 WATCHLIST_FILE = "watchlist.csv"
+OSLO_UNIVERSE_FILE = "oslo_universe.csv"
 PORTFOLIO_FILE = "portfolio.csv"
 INSIDER_FILE = "insider_watch.csv"
 EARNINGS_FILE = "earnings_calendar.csv"
@@ -794,8 +795,13 @@ def load_score_history(strategy=None):
 # FILE SETUP
 # =========================================================
 def ensure_files():
+    if not os.path.exists(OSLO_UNIVERSE_FILE):
+        pd.DataFrame(DEFAULT_TICKERS).to_csv(OSLO_UNIVERSE_FILE, index=False)
     if not os.path.exists(WATCHLIST_FILE):
-        pd.DataFrame(DEFAULT_TICKERS).to_csv(WATCHLIST_FILE, index=False)
+        if os.path.exists(OSLO_UNIVERSE_FILE):
+            pd.read_csv(OSLO_UNIVERSE_FILE).to_csv(WATCHLIST_FILE, index=False)
+        else:
+            pd.DataFrame(DEFAULT_TICKERS).to_csv(WATCHLIST_FILE, index=False)
     if not os.path.exists(PORTFOLIO_FILE):
         pd.DataFrame(columns=["ticker", "shares", "cost_price"]).to_csv(PORTFOLIO_FILE, index=False)
     if not os.path.exists(INSIDER_FILE):
@@ -1681,6 +1687,16 @@ inject_css(theme)
 strategy = st.sidebar.selectbox("Strategi / scoremotor", list(STRATEGY_WEIGHTS.keys()), index=0)
 
 watchlist_all = pd.read_csv(WATCHLIST_FILE)
+# Merge with broad Oslo universe if present, so existing smaller watchlists are automatically expanded
+try:
+    if os.path.exists(OSLO_UNIVERSE_FILE):
+        oslo_universe_df = pd.read_csv(OSLO_UNIVERSE_FILE)
+        watchlist_all = pd.concat([watchlist_all, oslo_universe_df], ignore_index=True)
+        if "ticker" in watchlist_all.columns:
+            watchlist_all["ticker"] = watchlist_all["ticker"].astype(str).str.upper().str.strip()
+            watchlist_all = watchlist_all.drop_duplicates(subset=["ticker"], keep="first")
+except Exception as e:
+    st.sidebar.warning(f"Klarte ikke laste bred Oslo-universe-fil: {e}")
 # Backward-compatible CSV validation
 for col, default in {"ticker": "", "name": "", "sector": "Ukjent", "market": "Ukjent", "segment": "Ukjent"}.items():
     if col not in watchlist_all.columns:
@@ -1723,12 +1739,12 @@ if rocket_only:
         filtered["segment"].astype(str).str.contains("Growth", case=False, na=False)
     ]
 
-default_n = min(35, len(filtered)) if len(filtered) else 0
-max_allowed = min(75, len(filtered)) if len(filtered) else 1
+default_n = min(100, len(filtered)) if len(filtered) else 0
+max_allowed = len(filtered) if len(filtered) else 1
 max_tickers = st.sidebar.slider("Antall aksjer å screene", 1, max_allowed, max(1, default_n))
 filtered = filtered.head(max_tickers)
 
-st.sidebar.caption(f"Univers etter filtre: {len(filtered)} aksjer. Full Oslo-liste her er utvidet, men ikke garantert komplett/offisiell.")
+st.sidebar.caption(f"Screener {len(filtered)} av {max_allowed} aksjer etter filtre. Bred Oslo-liste er inkludert, men Yahoo/yfinance kan mangle eller avvise enkelte tickere.")
 
 if st.sidebar.button("Tøm Streamlit-cache"):
     st.cache_data.clear()
@@ -1736,8 +1752,8 @@ if st.sidebar.button("Tøm Streamlit-cache"):
 
 st.sidebar.caption("Signalene er modellbaserte og ikke personlig investeringsråd.")
 
-st.markdown('<div class="hero-title">InvestAI v8 Decision Intelligence</div><div class="hero-subtitle">Beslutningsstøtte med thesis engine, bull/base/bear-scenarier og actionable insights</div>', unsafe_allow_html=True)
-st.caption("v7.3 utvider universet betydelig. Merk: tickerlisten er en praktisk gratisliste, ikke en offisiell komplett Euronext-master.")
+st.markdown('<div class="hero-title">InvestAI v8.6 Oslo Børs Screener</div><div class="hero-subtitle">Beslutningsstøtte med thesis engine, bull/base/bear-scenarier og actionable insights</div>', unsafe_allow_html=True)
+st.caption("v8.6 bruker en bred Oslo Børs-universe-fil. Gratisdata via Yahoo/yfinance kan mangle enkelte tickere, og listen bør vedlikeholdes mot Euronext ved behov.")
 
 macro_df = get_macro_assets()
 regime, regime_comment, risk_on_score = compute_market_regime(macro_df)
