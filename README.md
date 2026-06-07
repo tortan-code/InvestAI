@@ -1,32 +1,63 @@
-# InvestAI v8 Decision Intelligence
+# InvestAI v9 – Professional GUI
 
-Nytt i v8:
-- Decision Intelligence Engine
-- Explain Score
-- Bull/Base/Bear scenarioer
-- Risk/Reward-estimater
-- Conviction labels
-- Thesis engine
-- Top Ideas Engine
-- Defensive / Rocket / Risk-Reward lister
-- Bedre beslutningsstøtte fremfor bare visualisering
+Et gratis hobbyverktøy for aksjescreening, watchlist, porteføljeoversikt og ChatGPT-klare analyseprompter.
 
-Start:
-streamlit run app.py
+## Funksjoner
 
+- Renere dashboard
+- Aksjeprofil-side
+- Bedre kortdesign
+- Sektor- og faktorvisning
+- Forklaringsmotor
+- Red flag-panel
+- Mobilvennlig layout
+- Færre og mer relevante kolonner
+- Bedre «kopier til ChatGPT»-flyt
+- Bred Oslo Børs-screener via `oslo_universe.csv`
 
-## v8.1 Hotfix Flat
-
-Denne versjonen fikser NameError for `scenario_estimates`, `conviction_label` og `build_thesis`.
-Datafilene ligger flatt sammen med `app.py` for enklere GitHub/Streamlit-deploy.
-
-Start lokalt:
+## Kjør lokalt
 
 ```bash
 python -m pip install -r requirements.txt
 python -m streamlit run app.py
 ```
 
+## Deploy på Streamlit Cloud
 
-## v8.6 Oslo Børs Universe
-Denne versjonen inkluderer `oslo_universe.csv` og `watchlist.csv` med en bred liste over Oslo Børs / Oslo-relaterte tickere. Appen merger automatisk `watchlist.csv` med `oslo_universe.csv`, slik at du kan beholde egne aksjer og samtidig screene bredt. Gratisdata via yfinance kan mangle enkelte tickere, så ugyldige/manglende tickere hoppes over med advarsel i appen.
+1. Lag et GitHub-repo, for eksempel `InvestAI`.
+2. Last opp alle filene i denne mappen til repoets hovednivå/root.
+3. Gå til Streamlit Community Cloud.
+4. Velg repoet ditt.
+5. Sett `Main file path` til:
+
+```text
+app.py
+```
+
+6. Trykk Deploy.
+
+## Viktige filer
+
+```text
+app.py                  # Selve appen
+requirements.txt        # Python-pakker Streamlit installerer
+oslo_universe.csv       # Bred Oslo Børs-liste
+watchlist.csv           # Standard watchlist
+portfolio.csv           # Porteføljeeksempel / tom portefølje
+earnings_calendar.csv   # Enkel earnings-liste
+insider_watch.csv       # Enkel insider-watchliste
+notes.csv               # Notater
+.streamlit/config.toml  # Standard dark mode/theme
+```
+
+## Deling på mobil
+
+Når appen er deployet:
+
+1. Åpne Streamlit-lenken på Android/iPhone.
+2. I Chrome/Safari: velg «Legg til på startskjerm».
+3. Da fungerer den nesten som en app.
+
+## Viktig disclaimer
+
+Dette er ikke personlig finansiell rådgivning. Verktøyet er kun laget for analyse, læring og screening. Gratis datakilder kan ha feil, forsinkelser eller manglende tickere.
