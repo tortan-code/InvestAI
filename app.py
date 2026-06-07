@@ -16,13 +16,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 st.set_page_config(
-    page_title="InvestAI v9 Professional GUI",
+    page_title="InvestAI v9.1 Numeric Hotfix",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-APP_VERSION = "InvestAI v9 Professional GUI"
+APP_VERSION = "InvestAI v9.1 Numeric Hotfix"
 WATCHLIST_FILE = "watchlist.csv"
 OSLO_UNIVERSE_FILE = "oslo_universe.csv"
 PORTFOLIO_FILE = "portfolio.csv"
@@ -265,22 +265,52 @@ def fetch_one(ticker, name="", sector="", market="", segment=""):
     return out
 
 
+def to_numeric_series(df, column, default=np.nan):
+    """Return a clean numeric Series even if yfinance/CSV gives text values.
+
+    Handles strings like "N/A", "None", "1,234.5", "12%" and empty values.
+    This prevents Streamlit Cloud crashes when free market data changes format.
+    """
+    if column not in df.columns:
+        return pd.Series(default, index=df.index, dtype="float64")
+    s = df[column].copy()
+    if s.dtype == "object":
+        s = (
+            s.astype(str)
+            .str.strip()
+            .str.replace("%", "", regex=False)
+            .str.replace(" ", "", regex=False)
+            .str.replace(",", "", regex=False)
+            .replace({"": np.nan, "nan": np.nan, "None": np.nan, "N/A": np.nan, "-": np.nan})
+        )
+    return pd.to_numeric(s, errors="coerce").replace([np.inf, -np.inf], np.nan)
+
+
 def score_dataframe(df):
     df = df.copy()
+
+    numeric_columns = [
+        "return_1y", "return_3m", "daily_return", "volatility", "max_drawdown",
+        "pe", "ps", "debt_to_equity", "revenue_growth", "profit_margin", "market_cap", "last_price"
+    ]
+    for col in numeric_columns:
+        df[col] = to_numeric_series(df, col)
+
     r1y = df["return_1y"].fillna(0)
     r3m = df["return_3m"].fillna(0)
     dly = df["daily_return"].fillna(0)
-    vol = df["volatility"].fillna(df["volatility"].median() if df["volatility"].notna().any() else 45)
+    vol_median = df["volatility"].median() if df["volatility"].notna().any() else 45
+    vol = df["volatility"].fillna(vol_median)
     dd = df["max_drawdown"].fillna(-40)
-    pe = df["pe"].replace([np.inf, -np.inf], np.nan)
-    ps = df["ps"].replace([np.inf, -np.inf], np.nan)
-    debt = df["debt_to_equity"].replace([np.inf, -np.inf], np.nan)
+    pe = df["pe"]
+    ps = df["ps"]
+    debt = df["debt_to_equity"]
     rev = df["revenue_growth"].fillna(0)
     margin = df["profit_margin"].fillna(0)
 
     df["Momentum Score"] = (50 + r1y * 0.35 + r3m * 0.65 + dly * 0.6).apply(clamp)
-    value_pe = pe.apply(lambda x: 70 if pd.isna(x) else 90 if 0 < x < 12 else 75 if x < 20 else 55 if x < 35 else 35)
-    value_ps = ps.apply(lambda x: 65 if pd.isna(x) else 90 if 0 < x < 1.5 else 75 if x < 3 else 55 if x < 6 else 35)
+    value_pe = pe.apply(lambda x: 70 if pd.isna(x) else 90 if 0 < float(x) < 12 else 75 if float(x) < 20 else 55 if float(x) < 35 else 35)
+    value_ps = ps.apply(lambda x: 65 if pd.isna(x) else 90 if 0 < float(x) < 1.5 else 75 if float(x) < 3 else 55 if float(x) < 6 else 35)
     df["Value Score"] = (value_pe * 0.55 + value_ps * 0.45).apply(clamp)
     risk_raw = 25 + vol * 0.75 + abs(dd) * 0.45 + debt.fillna(70) * 0.05
     df["Risk Score"] = risk_raw.apply(clamp)
