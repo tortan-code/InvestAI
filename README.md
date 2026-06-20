@@ -1,63 +1,28 @@
-# InvestAI v9 – Professional GUI
+# InvestAI v11.0 – Investment Intelligence
 
-Et gratis hobbyverktøy for aksjescreening, watchlist, porteføljeoversikt og ChatGPT-klare analyseprompter.
+Gratis Streamlit-basert analyseverktøy for Oslo Børs.
 
-## Funksjoner
+## Nytt i v11.0
 
-- Renere dashboard
-- Aksjeprofil-side
-- Bedre kortdesign
-- Sektor- og faktorvisning
-- Forklaringsmotor
-- Red flag-panel
-- Mobilvennlig layout
-- Færre og mer relevante kolonner
-- Bedre «kopier til ChatGPT»-flyt
-- Bred Oslo Børs-screener via `oslo_universe.csv`
+- Conviction Score som ny hovedscore
+- Red Flag Engine
+- Investment Thesis Generator
+- Top Opportunities / beslutningssenter
+- Porteføljeanalyse med vektet conviction og risiko
+- Bedre ChatGPT-prompt med thesis og conviction
+- Robust numerisk datarensing fra gratis datakilder
 
-## Kjør lokalt
+## Start lokalt
 
 ```bash
 python -m pip install -r requirements.txt
 python -m streamlit run app.py
 ```
 
-## Deploy på Streamlit Cloud
+## Streamlit Cloud
 
-1. Lag et GitHub-repo, for eksempel `InvestAI`.
-2. Last opp alle filene i denne mappen til repoets hovednivå/root.
-3. Gå til Streamlit Community Cloud.
-4. Velg repoet ditt.
-5. Sett `Main file path` til:
+Last opp alle filene i denne mappen til GitHub. Velg `app.py` som main file i Streamlit Cloud.
 
-```text
-app.py
-```
+## Viktig
 
-6. Trykk Deploy.
-
-## Viktige filer
-
-```text
-app.py                  # Selve appen
-requirements.txt        # Python-pakker Streamlit installerer
-oslo_universe.csv       # Bred Oslo Børs-liste
-watchlist.csv           # Standard watchlist
-portfolio.csv           # Porteføljeeksempel / tom portefølje
-earnings_calendar.csv   # Enkel earnings-liste
-insider_watch.csv       # Enkel insider-watchliste
-notes.csv               # Notater
-.streamlit/config.toml  # Standard dark mode/theme
-```
-
-## Deling på mobil
-
-Når appen er deployet:
-
-1. Åpne Streamlit-lenken på Android/iPhone.
-2. I Chrome/Safari: velg «Legg til på startskjerm».
-3. Da fungerer den nesten som en app.
-
-## Viktig disclaimer
-
-Dette er ikke personlig finansiell rådgivning. Verktøyet er kun laget for analyse, læring og screening. Gratis datakilder kan ha feil, forsinkelser eller manglende tickere.
+Dette er et hobby-/analyseverktøy. Data fra gratis datakilder kan være mangelfull eller feil. Dette er ikke personlig finansiell rådgivning.

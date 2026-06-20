@@ -16,13 +16,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 st.set_page_config(
-    page_title="InvestAI v9.1 Numeric Hotfix",
+    page_title="InvestAI v11 Investment Intelligence",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-APP_VERSION = "InvestAI v9.1 Numeric Hotfix"
+APP_VERSION = "InvestAI v11 Investment Intelligence"
 WATCHLIST_FILE = "watchlist.csv"
 OSLO_UNIVERSE_FILE = "oslo_universe.csv"
 PORTFOLIO_FILE = "portfolio.csv"
@@ -161,6 +161,8 @@ def apply_css(mode):
     .section-card {{ background:var(--panel); border:1px solid var(--border); border-radius:20px; padding:1rem; margin-bottom:1rem; }}
     .redflag {{ background:rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.25); border-radius:14px; padding:.65rem .8rem; margin:.45rem 0; }}
     .positive {{ background:rgba(34,197,94,.12); border:1px solid rgba(34,197,94,.25); border-radius:14px; padding:.65rem .8rem; margin:.45rem 0; }}
+    .thesis {{ background:linear-gradient(135deg, rgba(37,99,235,.14), rgba(14,165,233,.08)); border:1px solid rgba(96,165,250,.28); border-radius:18px; padding:1rem; margin:.6rem 0; }}
+    .opportunity {{ background:var(--panel); border:1px solid var(--border); border-radius:18px; padding:1rem; margin:.6rem 0; box-shadow:0 10px 24px rgba(0,0,0,.06); }}
     @media (max-width: 768px) {{
       .mini-grid {{ grid-template-columns: repeat(2, minmax(0,1fr)); }}
       .metric-value {{ font-size:1.25rem; }}
@@ -286,6 +288,133 @@ def to_numeric_series(df, column, default=np.nan):
     return pd.to_numeric(s, errors="coerce").replace([np.inf, -np.inf], np.nan)
 
 
+
+
+def sector_theme(sector_text):
+    sector = str(sector_text or "").lower()
+    themes = []
+    if any(k in sector for k in ["ai", "semiconductor", "software", "teknologi", "iot", "edtech", "digital"]):
+        themes.append("AI / Digitalisering")
+    if any(k in sector for k in ["forsvar", "defence", "kongsberg"]):
+        themes.append("Forsvar")
+    if any(k in sector for k in ["energi", "olje", "offshore", "shipping", "fornybar", "hydrogen", "carbon", "ccs"]):
+        themes.append("Energi / Råvarer")
+    if any(k in sector for k in ["helse", "medtech", "biotech", "pharma", "diagnostikk"]):
+        themes.append("Helse / Medtech")
+    if any(k in sector for k in ["bank", "finans", "forsikring", "megling"]):
+        themes.append("Finans")
+    if not themes:
+        themes.append("Generell")
+    return ", ".join(themes)
+
+
+def classify_stock_row(row):
+    """Classify a scored row into practical InvestAI categories."""
+    inv = clamp(row.get("Investment Score", 0))
+    rocket = clamp(row.get("Rocket Score", 0))
+    mom = clamp(row.get("Momentum Score", 0))
+    val = clamp(row.get("Value Score", 0))
+    qual = clamp(row.get("Quality Score", 0))
+    risk = clamp(row.get("Risk Score", 0))
+    r1y = row.get("return_1y", 0)
+    rev = row.get("revenue_growth", 0)
+    pe = row.get("pe", np.nan)
+    segment = str(row.get("segment", "")).lower()
+    sector = str(row.get("sector", "")).lower()
+    mcap = row.get("market_cap", np.nan)
+
+    tags = []
+    if qual >= 70 and risk <= 60:
+        tags.append("Kvalitet")
+    if val >= 72:
+        tags.append("Verdi")
+    if mom >= 70:
+        tags.append("Momentum")
+    if rocket >= 75 and risk >= 55:
+        tags.append("Rakett")
+    if risk <= 45 and qual >= 55:
+        tags.append("Lavere risiko")
+    if pd.notna(r1y) and float(r1y) < -25 and (mom >= 45 or val >= 65):
+        tags.append("Turnaround")
+    if pd.notna(pe) and float(pe) > 0 and float(pe) < 14 and risk <= 65:
+        tags.append("Utbytte / Value-kandidat")
+    theme = sector_theme(sector)
+    for t in [x.strip() for x in theme.split(",")]:
+        if t and t != "Generell":
+            tags.append(t)
+
+    if not tags:
+        tags.append("Observasjon")
+
+    # Practical universe bucket after scoring
+    if qual >= 68 and risk <= 60 and "growth" not in segment:
+        bucket = "Kvalitetsunivers"
+    elif "growth" in segment or rocket >= 72 or risk >= 70 or any(k in sector for k in ["hydrogen", "biotech", "medtech", "forsvar", "ai", "semiconductor", "fornybar"]):
+        bucket = "Rakettunivers"
+    elif "hovedliste" in segment or "oslo" in str(row.get("market", "")).lower():
+        bucket = "Oslo Børs"
+    else:
+        bucket = "Full Norge"
+
+    if inv >= 80:
+        tier = "A · Sterk kandidat"
+    elif inv >= 68:
+        tier = "B · Interessant"
+    elif rocket >= 75:
+        tier = "C · Spekulativ rakett"
+    elif risk >= 75:
+        tier = "D · Høy risiko"
+    else:
+        tier = "E · Følg med"
+
+    why = []
+    if inv >= 70: why.append("høy samlet score")
+    if rocket >= 75: why.append("høyt rakettpotensial")
+    if mom >= 70: why.append("sterkt momentum")
+    if val >= 72: why.append("attraktiv verdsettelse")
+    if qual >= 70: why.append("god kvalitet")
+    if risk >= 70: why.append("høy risiko")
+    if not why: why.append("blandet modellbilde")
+
+    return pd.Series({
+        "Kategori": ", ".join(dict.fromkeys(tags)),
+        "Univers": bucket,
+        "Tier": tier,
+        "Tema": theme,
+        "Hvorfor på listen": "; ".join(why),
+    })
+
+
+def add_investai_classification(df):
+    if df.empty:
+        for col in ["Kategori", "Univers", "Tier", "Tema", "Hvorfor på listen"]:
+            df[col] = ""
+        return df
+    classified = df.apply(classify_stock_row, axis=1)
+    return pd.concat([df.reset_index(drop=True), classified.reset_index(drop=True)], axis=1)
+
+
+def filter_universe_pre_screen(df, mode):
+    """Pre-filter based on available CSV metadata before expensive yfinance calls."""
+    out = df.copy()
+    seg = out.get("segment", pd.Series("", index=out.index)).astype(str).str.lower()
+    sec = out.get("sector", pd.Series("", index=out.index)).astype(str).str.lower()
+    if mode == "Kvalitet":
+        out = out[seg.str.contains("hovedliste", na=False)]
+        risky = sec.str.contains("hydrogen|biotech|høy risiko|spec|venture|crypto|mining", na=False)
+        out = out[~risky]
+    elif mode == "Oslo Børs":
+        out = out[seg.str.contains("hovedliste", na=False)]
+    elif mode == "Rakettunivers":
+        rocket_terms = "growth|hydrogen|fornybar|teknologi|semiconductor|software|ai|iot|forsvar|medtech|biotech|miljø|carbon|ccs|shipping|offshore"
+        preferred = out[seg.str.contains("growth", na=False) | sec.str.contains(rocket_terms, na=False)]
+        rest = out.drop(preferred.index, errors="ignore")
+        out = pd.concat([preferred, rest], ignore_index=True)
+    # Full Norge = no filtering
+    if out.empty:
+        return df.copy()
+    return out.reset_index(drop=True)
+
 def score_dataframe(df):
     df = df.copy()
 
@@ -321,6 +450,8 @@ def score_dataframe(df):
     df["Investment Score"] = (
         df["Momentum Score"] * 0.25 + df["Value Score"] * 0.22 + df["Quality Score"] * 0.25 + df["Rocket Score"] * 0.18 + (100 - df["Risk Score"]) * 0.10
     ).apply(clamp)
+    df = add_investai_classification(df)
+    df = add_conviction_columns(df)
     return df
 
 
@@ -418,6 +549,111 @@ def scenario_estimates(row):
     return {"bear": price * (1 - downside), "base": price * (1 + base_up), "bull": price * (1 + bull_up)}
 
 
+
+
+def conviction_score(row):
+    """Decision-oriented score: quality + growth + valuation + momentum - risk + catalysts."""
+    quality = clamp(row.get("Quality Score", 50))
+    momentum = clamp(row.get("Momentum Score", 50))
+    value = clamp(row.get("Value Score", 50))
+    risk_inverse = 100 - clamp(row.get("Risk Score", 50))
+    rocket = clamp(row.get("Rocket Score", 50))
+    growth = clamp(50 + float(row.get("revenue_growth", 0) or 0) * 0.8)
+    catalyst = clamp((rocket * 0.55) + (momentum * 0.30) + (quality * 0.15))
+    score = quality * 0.25 + growth * 0.20 + value * 0.15 + momentum * 0.15 + risk_inverse * 0.15 + catalyst * 0.10
+    return clamp(score)
+
+
+def conviction_label(score):
+    s = clamp(score)
+    if s >= 90:
+        return "Elite"
+    if s >= 80:
+        return "Sterk kandidat"
+    if s >= 70:
+        return "Kjøpskandidat"
+    if s >= 60:
+        return "Følg tett"
+    return "Lav prioritet"
+
+
+def upside_label(row):
+    rocket = clamp(row.get("Rocket Score", 0))
+    inv = clamp(row.get("Investment Score", 0))
+    if rocket >= 82 and inv >= 65:
+        return "Svært høy"
+    if rocket >= 70:
+        return "Høy"
+    if inv >= 65:
+        return "Moderat"
+    return "Usikker"
+
+
+def conviction_drivers(row):
+    drivers = []
+    if clamp(row.get("Quality Score", 0)) >= 70:
+        drivers.append("kvalitet")
+    if clamp(row.get("Momentum Score", 0)) >= 70:
+        drivers.append("momentum")
+    if clamp(row.get("Value Score", 0)) >= 70:
+        drivers.append("verdsettelse")
+    if clamp(row.get("Rocket Score", 0)) >= 75:
+        drivers.append("oppsidepotensial")
+    if clamp(row.get("Risk Score", 0)) <= 45:
+        drivers.append("lavere risiko")
+    if pd.notna(row.get("revenue_growth", np.nan)) and row.get("revenue_growth", 0) > 15:
+        drivers.append("vekst")
+    return drivers or ["blandet, men interessant modellbilde"]
+
+
+def red_flag_engine(row):
+    flags = list(red_flags(row))
+    if clamp(row.get("Quality Score", 0)) < 35:
+        flags.append("Lav kvalitetsscore")
+    if clamp(row.get("Value Score", 0)) < 35 and pd.notna(row.get("pe", np.nan)):
+        flags.append("Krevende verdsettelse relativt til tilgjengelige multipler")
+    if row.get("return_3m", 0) < -20:
+        flags.append("Svak 3-måneders kursutvikling")
+    if pd.notna(row.get("profit_margin", np.nan)) and row.get("profit_margin", 0) < -10:
+        flags.append("Negativ margin / lønnsomhetspress")
+    return list(dict.fromkeys(flags))
+
+
+def investment_thesis(row):
+    name = row.get("name", row.get("ticker", "Selskapet"))
+    ticker = row.get("ticker", "")
+    sector = row.get("sector", "ukjent sektor")
+    conv = conviction_label(row.get("Conviction Score", conviction_score(row)))
+    drivers = ", ".join(conviction_drivers(row)[:4])
+    risk = risk_label(row.get("Risk Score", 0)).lower()
+    return f"{name} ({ticker}) er et {conv.lower()} investeringscase innen {sector}. Modellen peker særlig på {drivers}, mens risikobildet vurderes som {risk}. Caset bør brukes som et startpunkt for videre fundamental analyse, ikke som en automatisk kjøpsanbefaling."
+
+
+def bull_case_points(row):
+    pts = positives(row)
+    if clamp(row.get("Conviction Score", 0)) >= 80:
+        pts.insert(0, "Høy Conviction Score indikerer god kombinasjon av kvalitet, momentum og risikojustert oppside.")
+    return list(dict.fromkeys(pts))[:5]
+
+
+def bear_case_points(row):
+    flags = red_flag_engine(row)
+    if not flags:
+        flags = ["Gratisdata viser ingen åpenbare røde flagg, men fundamental rapportanalyse er fortsatt nødvendig."]
+    return flags[:5]
+
+
+def add_conviction_columns(df):
+    if df.empty:
+        return df
+    df = df.copy()
+    df["Conviction Score"] = df.apply(conviction_score, axis=1).apply(clamp)
+    df["Conviction"] = df["Conviction Score"].apply(conviction_label)
+    df["Oppside"] = df.apply(upside_label, axis=1)
+    df["Investment Thesis"] = df.apply(investment_thesis, axis=1)
+    df["Red Flags"] = df.apply(lambda r: "; ".join(red_flag_engine(r)) or "Ingen tydelige røde flagg", axis=1)
+    return df
+
 def make_prompt(row):
     flags = "; ".join(red_flags(row)) or "Ingen tydelige røde flagg fra modellen"
     strengths = "; ".join(positives(row))
@@ -435,12 +671,17 @@ Bruk en profesjonell equity research-struktur:
 8. Scenarioanalyse: bear/base/bull
 9. Hvem aksjen passer for
 
-Data fra InvestAI v9:
+Data fra InvestAI v11:
 - Sektor: {row.get('sector', 'Ukjent')}
 - Marked: {row.get('market', 'Ukjent')}
+- InvestAI-kategori: {row.get('Kategori', 'Ukjent')}
+- InvestAI-tier: {row.get('Tier', 'Ukjent')}
+- Hvorfor på listen: {row.get('Hvorfor på listen', 'Ukjent')}
 - Siste kurs: {fmt_num(row.get('price'))}
 - 1 års avkastning: {fmt_pct(row.get('return_1y'))}
 - 3 mnd avkastning: {fmt_pct(row.get('return_3m'))}
+- Conviction Score: {fmt_num(row.get('Conviction Score'))}/100 ({row.get('Conviction', 'Ukjent')})
+- Investment Thesis: {row.get('Investment Thesis', 'Ukjent')}
 - Investment Score: {fmt_num(row.get('Investment Score'))}/100
 - Rocket Score: {fmt_num(row.get('Rocket Score'))}/100
 - Momentum Score: {fmt_num(row.get('Momentum Score'))}/100
@@ -458,22 +699,23 @@ Skill tydelig mellom fakta, modellestimat og egen vurdering. Ikke gi personlig f
 
 
 def render_stock_card(row):
-    c = score_color(row.get("Investment Score", 0))
+    c = score_color(row.get("Conviction Score", row.get("Investment Score", 0)))
     st.markdown(f"""
     <div class="stock-card">
       <div class="stock-head">
         <div>
           <div class="ticker">{row.get('ticker','')}</div>
           <div class="company">{row.get('name','')} · {row.get('sector','Ukjent')}</div>
-          <span class="pill">{status_label(row.get('Investment Score', 0))}</span>
+          <span class="pill">{row.get('Conviction', status_label(row.get('Investment Score', 0)))}</span>
           <span class="pill">Risiko: {risk_label(row.get('Risk Score', 0))}</span>
+          <span class="pill">{row.get('Tier','')}</span>
         </div>
-        <div class="score-badge" style="background:{c};">{fmt_num(row.get('Investment Score'),0)}</div>
+        <div class="score-badge" style="background:{c};">{fmt_num(row.get('Conviction Score', row.get('Investment Score')),0)}</div>
       </div>
       <div class="mini-grid">
         <div class="mini-cell"><div class="mini-label">Kurs</div><div class="mini-value">{fmt_num(row.get('price'))}</div></div>
         <div class="mini-cell"><div class="mini-label">1 år</div><div class="mini-value">{fmt_pct(row.get('return_1y'))}</div></div>
-        <div class="mini-cell"><div class="mini-label">Rakett</div><div class="mini-value">{fmt_num(row.get('Rocket Score'),0)}/100</div></div>
+        <div class="mini-cell"><div class="mini-label">Oppside</div><div class="mini-value">{row.get('Oppside','–')}</div></div>
         <div class="mini-cell"><div class="mini-label">Risiko</div><div class="mini-value">{fmt_num(row.get('Risk Score'),0)}/100</div></div>
       </div>
     </div>
@@ -481,10 +723,12 @@ def render_stock_card(row):
 
 
 def render_explanation(row):
+    st.markdown("#### Investment Thesis")
+    st.markdown(f"<div class='thesis'>{investment_thesis(row)}</div>", unsafe_allow_html=True)
     st.markdown("#### Hvorfor scorer aksjen slik?")
     for p in explain_score(row):
         st.markdown(f"<div class='positive'>✅ {p}</div>", unsafe_allow_html=True)
-    flags = red_flags(row)
+    flags = red_flag_engine(row)
     st.markdown("#### Røde flagg")
     if flags:
         for f in flags:
@@ -523,15 +767,23 @@ universe = load_universe()
 
 with st.sidebar:
     st.title("📈 InvestAI")
-    st.caption("v9 Professional GUI · Gratisdata · Ikke finansiell rådgivning")
+    st.caption("v11 Investment Intelligence · Gratisdata · Ikke finansiell rådgivning")
     mode = st.radio("Tema", ["Mørk", "Lys"], horizontal=True, index=0)
     apply_css(mode)
     st.divider()
-    all_sectors = sorted([s for s in universe["sector"].dropna().unique() if str(s).strip()])
+    universe_mode = st.selectbox(
+        "Univers",
+        ["Kvalitet", "Oslo Børs", "Full Norge", "Rakettunivers"],
+        index=1,
+        help="Kvalitet = mer modne hovedlisteaksjer. Oslo Børs = hovedliste. Full Norge = alt i universfilen. Rakettunivers = Growth/small cap/tematiske kandidater først."
+    )
+    pre_universe = filter_universe_pre_screen(universe, universe_mode)
+    all_sectors = sorted([s for s in pre_universe["sector"].dropna().unique() if str(s).strip()])
     sector_filter = st.multiselect("Sektorfilter", options=all_sectors, default=[])
     search = st.text_input("Søk ticker/selskap", "")
-    max_n = st.slider("Antall aksjer å screene", 10, int(len(universe)), min(80, int(len(universe))), 10)
-    st.caption(f"Univers: {len(universe)} tickere")
+    max_default = min(100 if universe_mode != "Rakettunivers" else 140, int(len(pre_universe)))
+    max_n = st.slider("Antall aksjer å screene", 10, int(len(pre_universe)), max_default, 10)
+    st.caption(f"Valgt univers: {len(pre_universe)} av {len(universe)} tickere")
     st.divider()
     with st.expander("🛠 Feilhjelp / kopier feilmelding"):
         err = st.text_area("Lim inn feilmelding", height=130)
@@ -542,7 +794,7 @@ with st.sidebar:
 # apply_css after sidebar ensures global
 apply_css(mode)
 
-filtered_universe = universe.copy()
+filtered_universe = pre_universe.copy()
 if sector_filter:
     filtered_universe = filtered_universe[filtered_universe["sector"].isin(sector_filter)]
 if search.strip():
@@ -550,7 +802,7 @@ if search.strip():
     filtered_universe = filtered_universe[filtered_universe["ticker"].str.lower().str.contains(q) | filtered_universe["name"].str.lower().str.contains(q)]
 if filtered_universe.empty:
     st.warning("Ingen aksjer matcher filteret. Viser hele universet i stedet.")
-    filtered_universe = universe.copy()
+    filtered_universe = pre_universe.copy()
 
 try:
     with st.spinner("Henter og scorer aksjer ..."):
@@ -564,19 +816,19 @@ if data.empty:
     st.error("Fant ingen data. Prøv færre tickere eller sjekk internettforbindelsen.")
     st.stop()
 
-data_sorted = data.sort_values("Investment Score", ascending=False).reset_index(drop=True)
+data_sorted = data.sort_values("Conviction Score" if "Conviction Score" in data.columns else "Investment Score", ascending=False).reset_index(drop=True)
 
 # -----------------------------
 # Header
 # -----------------------------
 st.markdown(f"""
 <div class="topbar">
-  <div class="topbar-title">InvestAI v9 · Professional GUI</div>
-  <div class="subtle">Renere dashboard, aksjeprofil, forklaringsmotor, red flags og bedre ChatGPT-flyt.</div>
+  <div class="topbar-title">InvestAI v11 · Investment Intelligence</div>
+  <div class="subtle">Conviction Score, Red Flag Engine, Investment Thesis og Top Opportunities for Oslo Børs.</div>
 </div>
 """, unsafe_allow_html=True)
 
-page = st.tabs(["🏠 Dashboard", "🔎 Screener", "📌 Aksjeprofil", "🧭 Sektor & faktorer", "💼 Portefølje", "🧠 ChatGPT-flyt"])
+page = st.tabs(["🏠 Dashboard", "🎯 Top Opportunities", "🔎 Screener", "📌 Aksjeprofil", "🧭 Sektor & faktorer", "💼 Portefølje", "🧠 ChatGPT-flyt"])
 
 # -----------------------------
 # Dashboard
@@ -584,17 +836,17 @@ page = st.tabs(["🏠 Dashboard", "🔎 Screener", "📌 Aksjeprofil", "🧭 Sek
 with page[0]:
     top = data_sorted.iloc[0]
     c1, c2, c3, c4 = st.columns(4)
-    with c1: kpi_card("Beste kandidat", f"{top['ticker']}", f"Score {fmt_num(top['Investment Score'],0)}/100")
-    with c2: kpi_card("Median score", f"{fmt_num(data['Investment Score'].median(),0)}", f"{len(data)} aksjer screenet")
+    with c1: kpi_card("Beste kandidat", f"{top['ticker']}", f"Conviction {fmt_num(top['Conviction Score'],0)}/100")
+    with c2: kpi_card("Median conviction", f"{fmt_num(data['Conviction Score'].median(),0)}", f"{len(data)} aksjer · {universe_mode}")
     with c3: kpi_card("Topp rakett", data.sort_values("Rocket Score", ascending=False).iloc[0]["ticker"], f"Rocket {fmt_num(data['Rocket Score'].max(),0)}")
     with c4: kpi_card("Lavest risiko", data.sort_values("Risk Score", ascending=True).iloc[0]["ticker"], f"Risk {fmt_num(data['Risk Score'].min(),0)}")
 
     st.markdown("### Beslutningsoversikt")
     left, right = st.columns([1.1, 1])
     with left:
-        dash_cols = ["ticker", "name", "sector", "price", "return_1y", "Investment Score", "Rocket Score", "Risk Score"]
+        dash_cols = ["ticker", "name", "sector", "Conviction", "Oppside", "price", "return_1y", "Conviction Score", "Rocket Score", "Risk Score"]
         show = data_sorted[dash_cols].head(10).rename(columns={
-            "ticker":"Ticker", "name":"Selskap", "sector":"Sektor", "price":"Kurs", "return_1y":"1 år %",
+            "ticker":"Ticker", "name":"Selskap", "sector":"Sektor", "Conviction":"Conviction", "Oppside":"Oppside", "price":"Kurs", "return_1y":"1 år %",
         })
         st.dataframe(show, use_container_width=True, hide_index=True)
     with right:
@@ -611,29 +863,73 @@ with page[0]:
             render_stock_card(r)
 
 # -----------------------------
-# Screener
+# Top Opportunities
 # -----------------------------
 with page[1]:
+    st.markdown("### 🎯 Top Opportunities")
+    st.caption("Beslutningssenteret rangerer aksjer etter Conviction Score og viser de mest interessante kandidatene på tvers av stil: kvalitet, rakett, verdi og momentum.")
+    t1, t2, t3, t4 = st.columns(4)
+    with t1:
+        kpi_card("Høyest conviction", data.sort_values("Conviction Score", ascending=False).iloc[0]["ticker"], f"{fmt_num(data['Conviction Score'].max(),0)}/100")
+    with t2:
+        kpi_card("Beste rakett", data.sort_values("Rocket Score", ascending=False).iloc[0]["ticker"], f"{fmt_num(data['Rocket Score'].max(),0)}/100")
+    with t3:
+        kpi_card("Beste verdi", data.sort_values("Value Score", ascending=False).iloc[0]["ticker"], f"{fmt_num(data['Value Score'].max(),0)}/100")
+    with t4:
+        safer = data[data["Risk Score"] <= 55]
+        if safer.empty:
+            safer = data
+        kpi_card("Beste lavere risiko", safer.sort_values("Conviction Score", ascending=False).iloc[0]["ticker"], "Risk ≤ 55")
+
+    tab_a, tab_b, tab_c, tab_d = st.tabs(["Høyest conviction", "Rakettkandidater", "Verdi", "Momentum"])
+    opp_cols = ["ticker", "name", "sector", "Conviction", "Oppside", "Conviction Score", "Investment Score", "Rocket Score", "Value Score", "Momentum Score", "Risk Score", "Investment Thesis", "Red Flags"]
+    rename_opp = {"ticker":"Ticker", "name":"Selskap", "sector":"Sektor", "Conviction Score":"Conviction Score", "Investment Score":"Investment Score", "Rocket Score":"Rakett", "Value Score":"Verdi", "Momentum Score":"Momentum", "Risk Score":"Risiko"}
+    with tab_a:
+        st.dataframe(data.sort_values("Conviction Score", ascending=False)[opp_cols].head(20).rename(columns=rename_opp), use_container_width=True, hide_index=True)
+    with tab_b:
+        st.dataframe(data.sort_values("Rocket Score", ascending=False)[opp_cols].head(20).rename(columns=rename_opp), use_container_width=True, hide_index=True)
+    with tab_c:
+        st.dataframe(data.sort_values("Value Score", ascending=False)[opp_cols].head(20).rename(columns=rename_opp), use_container_width=True, hide_index=True)
+    with tab_d:
+        st.dataframe(data.sort_values("Momentum Score", ascending=False)[opp_cols].head(20).rename(columns=rename_opp), use_container_width=True, hide_index=True)
+
+    st.markdown("### Kortliste")
+    cols_opp = st.columns(3)
+    for i, (_, r) in enumerate(data.sort_values("Conviction Score", ascending=False).head(9).iterrows()):
+        with cols_opp[i % 3]:
+            render_stock_card(r)
+            st.caption(investment_thesis(r))
+
+# -----------------------------
+# Screener
+# -----------------------------
+with page[2]:
     st.markdown("### Screener med færre og mer relevante kolonner")
     c1, c2, c3 = st.columns(3)
     min_score = c1.slider("Minimum Investment Score", 0, 100, 0, 5)
     max_risk = c2.slider("Maks Risk Score", 0, 100, 100, 5)
-    sort_by = c3.selectbox("Sorter etter", ["Investment Score", "Rocket Score", "Momentum Score", "Value Score", "Quality Score", "Risk Score", "return_1y"])
-    view = data[(data["Investment Score"] >= min_score) & (data["Risk Score"] <= max_risk)].sort_values(sort_by, ascending=(sort_by=="Risk Score"))
-    cols = ["ticker", "name", "sector", "price", "daily_return", "return_3m", "return_1y", "Investment Score", "Rocket Score", "Value Score", "Risk Score"]
+    sort_by = c3.selectbox("Sorter etter", ["Conviction Score", "Investment Score", "Rocket Score", "Momentum Score", "Value Score", "Quality Score", "Risk Score", "return_1y"])
+    all_categories = sorted(set(",".join(data.get("Kategori", pd.Series(dtype=str)).fillna("").astype(str)).replace(" / ", "/").split(",")))
+    all_categories = [x.strip() for x in all_categories if x.strip()]
+    category_filter = st.multiselect("Kategori / tema", all_categories, default=[])
+    view = data[(data["Investment Score"] >= min_score) & (data["Risk Score"] <= max_risk)].copy()
+    if category_filter and "Kategori" in view.columns:
+        view = view[view["Kategori"].astype(str).apply(lambda x: any(c in x for c in category_filter))]
+    view = view.sort_values(sort_by, ascending=(sort_by=="Risk Score"))
+    cols = ["ticker", "name", "sector", "Conviction", "Oppside", "Investment Thesis", "Red Flags", "price", "daily_return", "return_3m", "return_1y", "Conviction Score", "Investment Score", "Rocket Score", "Value Score", "Risk Score"]
     pretty = view[cols].rename(columns={
-        "ticker":"Ticker", "name":"Selskap", "sector":"Sektor", "price":"Kurs", "daily_return":"I dag %", "return_3m":"3 mnd %", "return_1y":"1 år %",
-        "Investment Score":"Investeringsscore", "Rocket Score":"Rakettpotensial", "Value Score":"Verdsettelse", "Risk Score":"Risiko"
+        "ticker":"Ticker", "name":"Selskap", "sector":"Sektor", "Conviction":"Conviction", "Oppside":"Oppside", "Investment Thesis":"Investment Thesis", "Red Flags":"Røde flagg", "price":"Kurs", "daily_return":"I dag %", "return_3m":"3 mnd %", "return_1y":"1 år %",
+        "Conviction Score":"Conviction Score", "Investment Score":"Investeringsscore", "Rocket Score":"Rakettpotensial", "Value Score":"Verdsettelse", "Risk Score":"Risiko"
     })
     st.dataframe(pretty, use_container_width=True, hide_index=True)
     buffer = io.BytesIO()
     pretty.to_excel(buffer, index=False)
-    st.download_button("⬇️ Last ned screener som Excel", buffer.getvalue(), file_name="investai_v9_screener.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    st.download_button("⬇️ Last ned screener som Excel", buffer.getvalue(), file_name="investai_v11_screener.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # -----------------------------
 # Stock profile
 # -----------------------------
-with page[2]:
+with page[3]:
     st.markdown("### Aksjeprofil")
     tickers = data_sorted["ticker"].tolist()
     selected = st.selectbox("Velg aksje", tickers, index=0)
@@ -653,7 +949,7 @@ with page[2]:
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Ingen prishistorikk tilgjengelig fra gratis datakilde.")
-        scores = pd.DataFrame({"Faktor":["Momentum","Verdi","Kvalitet","Rakett","Lav risiko"], "Score":[row["Momentum Score"], row["Value Score"], row["Quality Score"], row["Rocket Score"], 100-row["Risk Score"]]})
+        scores = pd.DataFrame({"Faktor":["Conviction","Momentum","Verdi","Kvalitet","Rakett","Lav risiko"], "Score":[row["Conviction Score"], row["Momentum Score"], row["Value Score"], row["Quality Score"], row["Rocket Score"], 100-row["Risk Score"]]})
         fig2 = px.bar(scores, x="Faktor", y="Score", range_y=[0,100], template="plotly_dark" if mode=="Mørk" else "plotly_white", title="Faktorprofil")
         fig2.update_layout(height=320, margin=dict(l=10,r=10,t=45,b=10))
         st.plotly_chart(fig2, use_container_width=True)
@@ -667,7 +963,7 @@ with page[2]:
 # -----------------------------
 # Sector & factor view
 # -----------------------------
-with page[3]:
+with page[4]:
     st.markdown("### Sektor- og faktorvisning")
     sec = data.groupby("sector", dropna=False).agg(
         Antall=("ticker", "count"),
@@ -683,6 +979,19 @@ with page[3]:
         fig = px.density_heatmap(data, x="sector", y="Investment Score", z="Rocket Score", histfunc="avg", template="plotly_dark" if mode=="Mørk" else "plotly_white", title="Sector heatmap")
         fig.update_layout(height=420, xaxis_tickangle=-35, margin=dict(l=10,r=10,t=50,b=90))
         st.plotly_chart(fig, use_container_width=True)
+    st.markdown("### Kategorier og tema")
+    if "Kategori" in data.columns:
+        cat_rows = []
+        for _, rr in data.iterrows():
+            for cat in str(rr.get("Kategori", "")).split(","):
+                cat = cat.strip()
+                if cat:
+                    cat_rows.append({"Kategori": cat, "Ticker": rr.get("ticker"), "Score": rr.get("Investment Score", 0)})
+        cat_df = pd.DataFrame(cat_rows)
+        if not cat_df.empty:
+            cat_sum = cat_df.groupby("Kategori").agg(Antall=("Ticker", "count"), Snittscore=("Score", "mean")).reset_index().sort_values("Antall", ascending=False)
+            st.dataframe(cat_sum, use_container_width=True, hide_index=True)
+
     st.markdown("### Risk matrix")
     fig = px.scatter(data, x="Risk Score", y="Investment Score", color="sector", size=data["market_cap"].fillna(1e9), hover_name="ticker", template="plotly_dark" if mode=="Mørk" else "plotly_white")
     fig.update_layout(height=480, margin=dict(l=10,r=10,t=35,b=10))
@@ -691,7 +1000,7 @@ with page[3]:
 # -----------------------------
 # Portfolio
 # -----------------------------
-with page[4]:
+with page[5]:
     st.markdown("### Porteføljetracker")
     try:
         port = pd.read_csv(PORTFOLIO_FILE)
@@ -705,7 +1014,7 @@ with page[4]:
         st.code("ticker,shares,cost_price,note\nKOG.OL,10,850,Eksempel\nNOD.OL,25,120,Eksempel")
     else:
         port["ticker"] = port["ticker"].astype(str).str.upper().str.strip()
-        merged = port.merge(data[["ticker", "price", "sector", "Investment Score", "Risk Score"]], on="ticker", how="left")
+        merged = port.merge(data[["ticker", "price", "sector", "Conviction Score", "Investment Score", "Risk Score"]], on="ticker", how="left")
         merged["shares"] = pd.to_numeric(merged["shares"], errors="coerce").fillna(0)
         merged["cost_price"] = pd.to_numeric(merged["cost_price"], errors="coerce").fillna(0)
         merged["price"] = pd.to_numeric(merged["price"], errors="coerce").fillna(0)
@@ -717,6 +1026,23 @@ with page[4]:
         with p2: kpi_card("Gevinst/tap", fmt_money(merged["pnl"].sum()), "Urealisert")
         with p3: kpi_card("Antall posisjoner", str(len(merged)), "Fra portfolio.csv")
         st.dataframe(merged, use_container_width=True, hide_index=True)
+        st.markdown("### Porteføljeanalyse")
+        total_value = merged["market_value"].sum()
+        if total_value > 0:
+            merged["weight"] = merged["market_value"] / total_value * 100
+            top_weight = merged["weight"].max()
+            avg_conv = np.average(merged["Conviction Score"].fillna(50), weights=merged["market_value"].clip(lower=0)) if total_value > 0 else np.nan
+            avg_risk = np.average(merged["Risk Score"].fillna(50), weights=merged["market_value"].clip(lower=0)) if total_value > 0 else np.nan
+            p4, p5, p6 = st.columns(3)
+            with p4: kpi_card("Vektet conviction", fmt_num(avg_conv,0), "Basert på screenede posisjoner")
+            with p5: kpi_card("Vektet risiko", fmt_num(avg_risk,0), "Lavere er bedre")
+            with p6: kpi_card("Største posisjon", fmt_pct(top_weight,1), "Konsentrasjon")
+            if top_weight > 25:
+                st.warning("Konsentrasjonsrisiko: én posisjon er over 25 % av porteføljen.")
+            sec_exp = merged.groupby("sector", dropna=False)["market_value"].sum().reset_index()
+            sec_exp["weight"] = sec_exp["market_value"] / total_value * 100
+            if not sec_exp.empty:
+                st.dataframe(sec_exp.rename(columns={"sector":"Sektor", "market_value":"Markedsverdi", "weight":"Vekt %"}), use_container_width=True, hide_index=True)
         if merged["market_value"].sum() > 0:
             fig = px.pie(merged, values="market_value", names="ticker", title="Porteføljevekter", template="plotly_dark" if mode=="Mørk" else "plotly_white")
             st.plotly_chart(fig, use_container_width=True)
@@ -724,8 +1050,8 @@ with page[4]:
 # -----------------------------
 # ChatGPT flow
 # -----------------------------
-with page[5]:
-    st.markdown("### Bedre kopier til ChatGPT-flyt")
+with page[6]:
+    st.markdown("### Kopier komplett v11-analyse til ChatGPT")
     selected_prompt = st.selectbox("Velg aksje for analyseprompt", data_sorted["ticker"].tolist(), key="prompt_select")
     rowp = data_sorted[data_sorted["ticker"] == selected_prompt].iloc[0]
     prompt = make_prompt(rowp)
