@@ -22,13 +22,15 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-APP_VERSION = "InvestAI v11 Investment Intelligence"
+APP_VERSION = "InvestAI v11.1.2 Code Edition"
 WATCHLIST_FILE = "watchlist.csv"
 OSLO_UNIVERSE_FILE = "oslo_universe.csv"
 PORTFOLIO_FILE = "portfolio.csv"
 EARNINGS_FILE = "earnings_calendar.csv"
 INSIDER_FILE = "insider_watch.csv"
 NOTES_FILE = "notes.csv"
+PORTFOLIO_ANALYSIS_FILE = "portfolio_analysis.csv"
+MULTIBAGGER_FILE = "multibagger_candidates.csv"
 
 # -----------------------------
 # UI helpers
@@ -191,6 +193,10 @@ def ensure_csv_files():
         pd.read_csv(OSLO_UNIVERSE_FILE).head(40).to_csv(WATCHLIST_FILE, index=False)
     if not os.path.exists(NOTES_FILE):
         pd.DataFrame(columns=["ticker", "note", "updated"]).to_csv(NOTES_FILE, index=False)
+    if not os.path.exists(PORTFOLIO_ANALYSIS_FILE):
+        pd.DataFrame(columns=["date", "portfolio_conviction", "diversification_score", "portfolio_risk", "positions", "notes"]).to_csv(PORTFOLIO_ANALYSIS_FILE, index=False)
+    if not os.path.exists(MULTIBAGGER_FILE):
+        pd.DataFrame(columns=["date", "ticker", "conviction", "multibagger_score", "theme", "market_cap"]).to_csv(MULTIBAGGER_FILE, index=False)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -452,6 +458,7 @@ def score_dataframe(df):
     ).apply(clamp)
     df = add_investai_classification(df)
     df = add_conviction_columns(df)
+    df = add_multibagger_columns(df)
     return df
 
 
@@ -654,6 +661,157 @@ def add_conviction_columns(df):
     df["Red Flags"] = df.apply(lambda r: "; ".join(red_flag_engine(r)) or "Ingen tydelige røde flagg", axis=1)
     return df
 
+
+def multibagger_score(row):
+    """0-100 score for asymmetrical upside candidates.
+
+    The score rewards growth, momentum, quality and a small/mid-cap profile, but
+    penalizes excessive risk. It is intentionally conservative when data is missing.
+    """
+    growth = clamp(50 + float(row.get("revenue_growth", 0) or 0) * 1.1)
+    momentum = clamp(row.get("Momentum Score", 0))
+    quality = clamp(row.get("Quality Score", 0))
+    conviction = clamp(row.get("Conviction Score", row.get("Investment Score", 0)))
+    risk_inverse = 100 - clamp(row.get("Risk Score", 50))
+    mcap = row.get("market_cap", np.nan)
+    if pd.isna(mcap) or float(mcap) <= 0:
+        size_bonus = 55
+    elif float(mcap) < 2e9:
+        size_bonus = 95
+    elif float(mcap) < 10e9:
+        size_bonus = 82
+    elif float(mcap) < 50e9:
+        size_bonus = 62
+    else:
+        size_bonus = 35
+    theme = str(row.get("Tema", row.get("sector", ""))).lower()
+    theme_bonus = 10 if any(k in theme for k in ["ai", "forsvar", "medtech", "semiconductor", "energi", "hydrogen", "digital", "iot"]) else 0
+    score = growth * 0.28 + momentum * 0.22 + quality * 0.18 + size_bonus * 0.17 + conviction * 0.10 + risk_inverse * 0.05 + theme_bonus
+    return clamp(score)
+
+
+def add_multibagger_columns(df):
+    if df.empty:
+        return df
+    df = df.copy()
+    df["Multi-Bagger Score"] = df.apply(multibagger_score, axis=1).apply(clamp)
+    df["Opportunity Bucket"] = df.apply(opportunity_bucket, axis=1)
+    return df
+
+
+def opportunity_bucket(row):
+    conv = clamp(row.get("Conviction Score", 0))
+    rocket = clamp(row.get("Rocket Score", 0))
+    value = clamp(row.get("Value Score", 0))
+    quality = clamp(row.get("Quality Score", 0))
+    momentum = clamp(row.get("Momentum Score", 0))
+    risk = clamp(row.get("Risk Score", 0))
+    r1y = row.get("return_1y", np.nan)
+    if quality >= 72 and conv >= 75 and risk <= 60:
+        return "Compounder"
+    if rocket >= 76 or clamp(row.get("Multi-Bagger Score", 0)) >= 75:
+        return "Rocket"
+    if value >= 74 and risk <= 70:
+        return "Value"
+    if pd.notna(r1y) and float(r1y) < -20 and (momentum >= 45 or value >= 60):
+        return "Turnaround"
+    if momentum >= 75:
+        return "Momentum"
+    return "Watchlist"
+
+
+def sector_leaderboard(df):
+    if df.empty or "sector" not in df.columns:
+        return pd.DataFrame(columns=["Sektor", "Antall", "Conviction", "Multi-Bagger", "Risiko"])
+    sec = df.groupby("sector", dropna=False).agg(
+        Antall=("ticker", "count"),
+        Conviction=("Conviction Score", "mean"),
+        MultiBagger=("Multi-Bagger Score", "mean"),
+        Risiko=("Risk Score", "mean"),
+    ).reset_index().rename(columns={"sector": "Sektor", "MultiBagger": "Multi-Bagger"})
+    return sec.sort_values("Conviction", ascending=False)
+
+
+def load_portfolio_frame():
+    try:
+        port = pd.read_csv(PORTFOLIO_FILE)
+    except Exception:
+        port = pd.DataFrame(columns=["ticker", "shares", "cost_price", "note"])
+    for col, default in {"ticker":"", "shares":0, "cost_price":0, "note":""}.items():
+        if col not in port.columns:
+            port[col] = default
+    port["ticker"] = port["ticker"].astype(str).str.upper().str.strip()
+    return port
+
+
+def portfolio_intelligence(port, data):
+    base_cols = ["ticker", "price", "sector", "Conviction Score", "Investment Score", "Risk Score", "Opportunity Bucket"]
+    available = [c for c in base_cols if c in data.columns]
+    merged = port.merge(data[available], on="ticker", how="left")
+    merged["shares"] = pd.to_numeric(merged.get("shares", 0), errors="coerce").fillna(0)
+    merged["cost_price"] = pd.to_numeric(merged.get("cost_price", 0), errors="coerce").fillna(0)
+    merged["price"] = pd.to_numeric(merged.get("price", 0), errors="coerce").fillna(0)
+    merged["market_value"] = merged["shares"] * merged["price"]
+    merged["cost_value"] = merged["shares"] * merged["cost_price"]
+    merged["pnl"] = merged["market_value"] - merged["cost_value"]
+    total = float(merged["market_value"].sum())
+    if total > 0:
+        merged["weight"] = merged["market_value"] / total * 100
+        weights = merged["market_value"].clip(lower=0)
+        conviction = float(np.average(merged["Conviction Score"].fillna(50), weights=weights)) if weights.sum() > 0 else np.nan
+        risk = float(np.average(merged["Risk Score"].fillna(50), weights=weights)) if weights.sum() > 0 else np.nan
+        sector_count = max(1, merged["sector"].fillna("Ukjent").nunique())
+        position_count = int((merged["market_value"] > 0).sum())
+        top_weight = float(merged["weight"].max()) if len(merged) else 0
+        diversification = clamp(35 + min(position_count, 12) * 3 + min(sector_count, 8) * 5 - max(0, top_weight - 20) * 1.2)
+    else:
+        merged["weight"] = 0
+        conviction, risk, diversification, top_weight, sector_count, position_count = np.nan, np.nan, 0, 0, 0, 0
+    sector_text = " ".join(merged.get("sector", pd.Series(dtype=str)).fillna("").astype(str).str.lower().tolist())
+    missing = []
+    checks = {
+        "Finans": ["finans", "bank", "forsikring"],
+        "Energi": ["energi", "olje", "offshore", "shipping"],
+        "Teknologi": ["teknologi", "software", "semiconductor", "iot", "ai"],
+        "Defensive/helse": ["helse", "medtech", "pharma", "konsum", "defensiv"],
+        "Utbytte/value": ["bank", "finans", "energi", "shipping", "utbytte"],
+    }
+    for label, terms in checks.items():
+        if not any(t in sector_text for t in terms):
+            missing.append(label)
+    warnings = []
+    if top_weight > 25:
+        warnings.append(f"Konsentrasjonsrisiko: største posisjon er {top_weight:.1f}%")
+    if risk == risk and risk > 65:
+        warnings.append("Porteføljen har høy vektet risikoscore")
+    if sector_count <= 2 and position_count >= 2:
+        warnings.append("Lav sektorspredning")
+    return merged, {
+        "total_value": total,
+        "conviction": conviction,
+        "risk": risk,
+        "diversification": diversification,
+        "top_weight": top_weight,
+        "sector_count": sector_count,
+        "position_count": position_count,
+        "missing": missing,
+        "warnings": warnings,
+    }
+
+
+def multibagger_candidates(df, max_market_cap=10e9, min_score=65):
+    if df.empty:
+        return df.copy()
+    out = df.copy()
+    out["market_cap_clean"] = pd.to_numeric(out.get("market_cap", np.nan), errors="coerce")
+    cond = (
+        (out["Multi-Bagger Score"] >= min_score) &
+        (out["Conviction Score"] >= 60) &
+        (out["Momentum Score"] >= 45) &
+        ((out["market_cap_clean"].isna()) | (out["market_cap_clean"] <= max_market_cap))
+    )
+    return out[cond].sort_values("Multi-Bagger Score", ascending=False)
+
 def make_prompt(row):
     flags = "; ".join(red_flags(row)) or "Ingen tydelige røde flagg fra modellen"
     strengths = "; ".join(positives(row))
@@ -681,6 +839,8 @@ Data fra InvestAI v11:
 - 1 års avkastning: {fmt_pct(row.get('return_1y'))}
 - 3 mnd avkastning: {fmt_pct(row.get('return_3m'))}
 - Conviction Score: {fmt_num(row.get('Conviction Score'))}/100 ({row.get('Conviction', 'Ukjent')})
+- Multi-Bagger Score: {fmt_num(row.get('Multi-Bagger Score'))}/100
+- Opportunity Bucket: {row.get('Opportunity Bucket', 'Ukjent')}
 - Investment Thesis: {row.get('Investment Thesis', 'Ukjent')}
 - Investment Score: {fmt_num(row.get('Investment Score'))}/100
 - Rocket Score: {fmt_num(row.get('Rocket Score'))}/100
@@ -767,7 +927,7 @@ universe = load_universe()
 
 with st.sidebar:
     st.title("📈 InvestAI")
-    st.caption("v11 Investment Intelligence · Gratisdata · Ikke finansiell rådgivning")
+    st.caption("v11.1.2 Code Edition · Gratisdata · Ikke finansiell rådgivning")
     mode = st.radio("Tema", ["Mørk", "Lys"], horizontal=True, index=0)
     apply_css(mode)
     st.divider()
@@ -823,12 +983,12 @@ data_sorted = data.sort_values("Conviction Score" if "Conviction Score" in data.
 # -----------------------------
 st.markdown(f"""
 <div class="topbar">
-  <div class="topbar-title">InvestAI v11 · Investment Intelligence</div>
-  <div class="subtle">Conviction Score, Red Flag Engine, Investment Thesis og Top Opportunities for Oslo Børs.</div>
+  <div class="topbar-title">InvestAI v11.1.2 · Portfolio & Multi-Bagger Intelligence</div>
+  <div class="subtle">Conviction, Portfolio Intelligence, Opportunity Buckets og Multi-Bagger Radar for Oslo Børs.</div>
 </div>
 """, unsafe_allow_html=True)
 
-page = st.tabs(["🏠 Dashboard", "🎯 Top Opportunities", "🔎 Screener", "📌 Aksjeprofil", "🧭 Sektor & faktorer", "💼 Portefølje", "🧠 ChatGPT-flyt"])
+page = st.tabs(["🏠 Dashboard", "🎯 Top Opportunities", "🔎 Screener", "📌 Aksjeprofil", "🧭 Sektor & faktorer", "💼 Portefølje", "💼 Portfolio Intelligence", "🚀 Multi-Bagger Radar", "🧠 ChatGPT-flyt"])
 
 # -----------------------------
 # Dashboard
@@ -840,6 +1000,15 @@ with page[0]:
     with c2: kpi_card("Median conviction", f"{fmt_num(data['Conviction Score'].median(),0)}", f"{len(data)} aksjer · {universe_mode}")
     with c3: kpi_card("Topp rakett", data.sort_values("Rocket Score", ascending=False).iloc[0]["ticker"], f"Rocket {fmt_num(data['Rocket Score'].max(),0)}")
     with c4: kpi_card("Lavest risiko", data.sort_values("Risk Score", ascending=True).iloc[0]["ticker"], f"Risk {fmt_num(data['Risk Score'].min(),0)}")
+
+    # v11.1.2 snapshots
+    port_dash = load_portfolio_frame()
+    if not port_dash.empty and not port_dash["ticker"].astype(str).str.strip().eq("").all():
+        _, pmetrics_dash = portfolio_intelligence(port_dash, data)
+        d1, d2, d3 = st.columns(3)
+        with d1: kpi_card("Portefølje conviction", fmt_num(pmetrics_dash["conviction"],0), "Vektet snitt av posisjoner")
+        with d2: kpi_card("Diversifisering", f"{fmt_num(pmetrics_dash['diversification'],0)}/100", "Basert på posisjoner og sektorer")
+        with d3: kpi_card("Multi-bagger watch", multibagger_candidates(data).head(1)["ticker"].iloc[0] if not multibagger_candidates(data).empty else "–", "Høy asymmetrisk oppside")
 
     st.markdown("### Beslutningsoversikt")
     left, right = st.columns([1.1, 1])
@@ -882,8 +1051,8 @@ with page[1]:
         kpi_card("Beste lavere risiko", safer.sort_values("Conviction Score", ascending=False).iloc[0]["ticker"], "Risk ≤ 55")
 
     tab_a, tab_b, tab_c, tab_d = st.tabs(["Høyest conviction", "Rakettkandidater", "Verdi", "Momentum"])
-    opp_cols = ["ticker", "name", "sector", "Conviction", "Oppside", "Conviction Score", "Investment Score", "Rocket Score", "Value Score", "Momentum Score", "Risk Score", "Investment Thesis", "Red Flags"]
-    rename_opp = {"ticker":"Ticker", "name":"Selskap", "sector":"Sektor", "Conviction Score":"Conviction Score", "Investment Score":"Investment Score", "Rocket Score":"Rakett", "Value Score":"Verdi", "Momentum Score":"Momentum", "Risk Score":"Risiko"}
+    opp_cols = ["ticker", "name", "sector", "Conviction", "Oppside", "Opportunity Bucket", "Conviction Score", "Multi-Bagger Score", "Investment Score", "Rocket Score", "Value Score", "Momentum Score", "Risk Score", "Investment Thesis", "Red Flags"]
+    rename_opp = {"ticker":"Ticker", "name":"Selskap", "sector":"Sektor", "Conviction Score":"Conviction Score", "Investment Score":"Investment Score", "Rocket Score":"Rakett", "Value Score":"Verdi", "Momentum Score":"Momentum", "Risk Score":"Risiko", "Opportunity Bucket":"Bucket", "Multi-Bagger Score":"Multi-Bagger"}
     with tab_a:
         st.dataframe(data.sort_values("Conviction Score", ascending=False)[opp_cols].head(20).rename(columns=rename_opp), use_container_width=True, hide_index=True)
     with tab_b:
@@ -908,7 +1077,7 @@ with page[2]:
     c1, c2, c3 = st.columns(3)
     min_score = c1.slider("Minimum Investment Score", 0, 100, 0, 5)
     max_risk = c2.slider("Maks Risk Score", 0, 100, 100, 5)
-    sort_by = c3.selectbox("Sorter etter", ["Conviction Score", "Investment Score", "Rocket Score", "Momentum Score", "Value Score", "Quality Score", "Risk Score", "return_1y"])
+    sort_by = c3.selectbox("Sorter etter", ["Conviction Score", "Multi-Bagger Score", "Investment Score", "Rocket Score", "Momentum Score", "Value Score", "Quality Score", "Risk Score", "return_1y"])
     all_categories = sorted(set(",".join(data.get("Kategori", pd.Series(dtype=str)).fillna("").astype(str)).replace(" / ", "/").split(",")))
     all_categories = [x.strip() for x in all_categories if x.strip()]
     category_filter = st.multiselect("Kategori / tema", all_categories, default=[])
@@ -916,10 +1085,10 @@ with page[2]:
     if category_filter and "Kategori" in view.columns:
         view = view[view["Kategori"].astype(str).apply(lambda x: any(c in x for c in category_filter))]
     view = view.sort_values(sort_by, ascending=(sort_by=="Risk Score"))
-    cols = ["ticker", "name", "sector", "Conviction", "Oppside", "Investment Thesis", "Red Flags", "price", "daily_return", "return_3m", "return_1y", "Conviction Score", "Investment Score", "Rocket Score", "Value Score", "Risk Score"]
+    cols = ["ticker", "name", "sector", "Conviction", "Oppside", "Opportunity Bucket", "Investment Thesis", "Red Flags", "price", "daily_return", "return_3m", "return_1y", "Conviction Score", "Multi-Bagger Score", "Investment Score", "Rocket Score", "Value Score", "Risk Score"]
     pretty = view[cols].rename(columns={
         "ticker":"Ticker", "name":"Selskap", "sector":"Sektor", "Conviction":"Conviction", "Oppside":"Oppside", "Investment Thesis":"Investment Thesis", "Red Flags":"Røde flagg", "price":"Kurs", "daily_return":"I dag %", "return_3m":"3 mnd %", "return_1y":"1 år %",
-        "Conviction Score":"Conviction Score", "Investment Score":"Investeringsscore", "Rocket Score":"Rakettpotensial", "Value Score":"Verdsettelse", "Risk Score":"Risiko"
+        "Conviction Score":"Conviction Score", "Investment Score":"Investeringsscore", "Rocket Score":"Rakettpotensial", "Value Score":"Verdsettelse", "Risk Score":"Risiko", "Opportunity Bucket":"Bucket", "Multi-Bagger Score":"Multi-Bagger"
     })
     st.dataframe(pretty, use_container_width=True, hide_index=True)
     buffer = io.BytesIO()
@@ -949,7 +1118,7 @@ with page[3]:
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Ingen prishistorikk tilgjengelig fra gratis datakilde.")
-        scores = pd.DataFrame({"Faktor":["Conviction","Momentum","Verdi","Kvalitet","Rakett","Lav risiko"], "Score":[row["Conviction Score"], row["Momentum Score"], row["Value Score"], row["Quality Score"], row["Rocket Score"], 100-row["Risk Score"]]})
+        scores = pd.DataFrame({"Faktor":["Conviction","Multi-Bagger","Momentum","Verdi","Kvalitet","Rakett","Lav risiko"], "Score":[row["Conviction Score"], row["Multi-Bagger Score"], row["Momentum Score"], row["Value Score"], row["Quality Score"], row["Rocket Score"], 100-row["Risk Score"]]})
         fig2 = px.bar(scores, x="Faktor", y="Score", range_y=[0,100], template="plotly_dark" if mode=="Mørk" else "plotly_white", title="Faktorprofil")
         fig2.update_layout(height=320, margin=dict(l=10,r=10,t=45,b=10))
         st.plotly_chart(fig2, use_container_width=True)
@@ -965,16 +1134,10 @@ with page[3]:
 # -----------------------------
 with page[4]:
     st.markdown("### Sektor- og faktorvisning")
-    sec = data.groupby("sector", dropna=False).agg(
-        Antall=("ticker", "count"),
-        Snittscore=("Investment Score", "mean"),
-        Rakett=("Rocket Score", "mean"),
-        Risiko=("Risk Score", "mean"),
-        Momentum=("Momentum Score", "mean"),
-    ).reset_index().sort_values("Snittscore", ascending=False)
+    sec = sector_leaderboard(data)
     c1, c2 = st.columns([1,1])
     with c1:
-        st.dataframe(sec.rename(columns={"sector":"Sektor"}), use_container_width=True, hide_index=True)
+        st.dataframe(sec, use_container_width=True, hide_index=True)
     with c2:
         fig = px.density_heatmap(data, x="sector", y="Investment Score", z="Rocket Score", histfunc="avg", template="plotly_dark" if mode=="Mørk" else "plotly_white", title="Sector heatmap")
         fig.update_layout(height=420, xaxis_tickangle=-35, margin=dict(l=10,r=10,t=50,b=90))
@@ -993,7 +1156,9 @@ with page[4]:
             st.dataframe(cat_sum, use_container_width=True, hide_index=True)
 
     st.markdown("### Risk matrix")
-    fig = px.scatter(data, x="Risk Score", y="Investment Score", color="sector", size=data["market_cap"].fillna(1e9), hover_name="ticker", template="plotly_dark" if mode=="Mørk" else "plotly_white")
+    risk_matrix = data.copy()
+    risk_matrix["market_cap_plot"] = pd.to_numeric(risk_matrix.get("market_cap", np.nan), errors="coerce").fillna(1e9).clip(lower=1e8)
+    fig = px.scatter(risk_matrix, x="Risk Score", y="Conviction Score", color="sector", size="market_cap_plot", hover_name="ticker", template="plotly_dark" if mode=="Mørk" else "plotly_white")
     fig.update_layout(height=480, margin=dict(l=10,r=10,t=35,b=10))
     st.plotly_chart(fig, use_container_width=True)
 
@@ -1002,56 +1167,96 @@ with page[4]:
 # -----------------------------
 with page[5]:
     st.markdown("### Porteføljetracker")
-    try:
-        port = pd.read_csv(PORTFOLIO_FILE)
-    except Exception:
-        port = pd.DataFrame(columns=["ticker", "shares", "cost_price", "note"])
-    for col, default in {"ticker":"", "shares":0, "cost_price":0, "note":""}.items():
-        if col not in port.columns:
-            port[col] = default
+    port = load_portfolio_frame()
     if port.empty or port["ticker"].astype(str).str.strip().eq("").all():
         st.info("Ingen portefølje registrert enda. Legg inn rader i portfolio.csv: ticker,shares,cost_price,note")
         st.code("ticker,shares,cost_price,note\nKOG.OL,10,850,Eksempel\nNOD.OL,25,120,Eksempel")
     else:
-        port["ticker"] = port["ticker"].astype(str).str.upper().str.strip()
-        merged = port.merge(data[["ticker", "price", "sector", "Conviction Score", "Investment Score", "Risk Score"]], on="ticker", how="left")
-        merged["shares"] = pd.to_numeric(merged["shares"], errors="coerce").fillna(0)
-        merged["cost_price"] = pd.to_numeric(merged["cost_price"], errors="coerce").fillna(0)
-        merged["price"] = pd.to_numeric(merged["price"], errors="coerce").fillna(0)
-        merged["market_value"] = merged["shares"] * merged["price"]
-        merged["cost_value"] = merged["shares"] * merged["cost_price"]
-        merged["pnl"] = merged["market_value"] - merged["cost_value"]
+        merged, pmetrics = portfolio_intelligence(port, data)
         p1,p2,p3 = st.columns(3)
-        with p1: kpi_card("Markedsverdi", fmt_money(merged["market_value"].sum()), "Basert på tilgjengelig kurs")
+        with p1: kpi_card("Markedsverdi", fmt_money(pmetrics["total_value"]), "Basert på tilgjengelig kurs")
         with p2: kpi_card("Gevinst/tap", fmt_money(merged["pnl"].sum()), "Urealisert")
-        with p3: kpi_card("Antall posisjoner", str(len(merged)), "Fra portfolio.csv")
+        with p3: kpi_card("Antall posisjoner", str(pmetrics["position_count"]), "Fra portfolio.csv")
         st.dataframe(merged, use_container_width=True, hide_index=True)
-        st.markdown("### Porteføljeanalyse")
-        total_value = merged["market_value"].sum()
-        if total_value > 0:
-            merged["weight"] = merged["market_value"] / total_value * 100
-            top_weight = merged["weight"].max()
-            avg_conv = np.average(merged["Conviction Score"].fillna(50), weights=merged["market_value"].clip(lower=0)) if total_value > 0 else np.nan
-            avg_risk = np.average(merged["Risk Score"].fillna(50), weights=merged["market_value"].clip(lower=0)) if total_value > 0 else np.nan
-            p4, p5, p6 = st.columns(3)
-            with p4: kpi_card("Vektet conviction", fmt_num(avg_conv,0), "Basert på screenede posisjoner")
-            with p5: kpi_card("Vektet risiko", fmt_num(avg_risk,0), "Lavere er bedre")
-            with p6: kpi_card("Største posisjon", fmt_pct(top_weight,1), "Konsentrasjon")
-            if top_weight > 25:
-                st.warning("Konsentrasjonsrisiko: én posisjon er over 25 % av porteføljen.")
-            sec_exp = merged.groupby("sector", dropna=False)["market_value"].sum().reset_index()
-            sec_exp["weight"] = sec_exp["market_value"] / total_value * 100
-            if not sec_exp.empty:
-                st.dataframe(sec_exp.rename(columns={"sector":"Sektor", "market_value":"Markedsverdi", "weight":"Vekt %"}), use_container_width=True, hide_index=True)
-        if merged["market_value"].sum() > 0:
+        if pmetrics["total_value"] > 0:
             fig = px.pie(merged, values="market_value", names="ticker", title="Porteføljevekter", template="plotly_dark" if mode=="Mørk" else "plotly_white")
             st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
-# ChatGPT flow
+# Portfolio Intelligence Pro
 # -----------------------------
 with page[6]:
-    st.markdown("### Kopier komplett v11-analyse til ChatGPT")
+    st.markdown("### Portfolio Intelligence Pro")
+    port = load_portfolio_frame()
+    if port.empty or port["ticker"].astype(str).str.strip().eq("").all():
+        st.info("Ingen portefølje registrert enda. Legg inn rader i portfolio.csv for å aktivere Portfolio Intelligence.")
+        st.code("ticker,shares,cost_price,note\nKOG.OL,10,850,Eksempel\nNOD.OL,25,120,Eksempel")
+    else:
+        merged, pmetrics = portfolio_intelligence(port, data)
+        a,b,c,d = st.columns(4)
+        with a: kpi_card("Portefølje Conviction", fmt_num(pmetrics["conviction"],0), "Vektet etter markedsverdi")
+        with b: kpi_card("Diversifisering", f"{fmt_num(pmetrics['diversification'],0)}/100", "Antall posisjoner + sektorer")
+        with c: kpi_card("Porteføljerisiko", fmt_num(pmetrics["risk"],0), "Lavere er bedre")
+        with d: kpi_card("Største posisjon", fmt_pct(pmetrics["top_weight"],1), "Konsentrasjon")
+
+        if pmetrics["warnings"]:
+            st.markdown("#### Varsler")
+            for w in pmetrics["warnings"]:
+                st.markdown(f"<div class='redflag'>⚠️ {w}</div>", unsafe_allow_html=True)
+        else:
+            st.success("Ingen store porteføljevarsler fra modellen.")
+
+        st.markdown("#### Hullanalyse")
+        if pmetrics["missing"]:
+            st.write("Porteføljen mangler eller har lav synlig eksponering mot:")
+            st.write(" · ".join(pmetrics["missing"]))
+        else:
+            st.success("Porteføljen har bred tematisk/sektormessig dekning basert på registrerte posisjoner.")
+
+        st.markdown("#### Sektor- og posisjonseksponering")
+        if pmetrics["total_value"] > 0:
+            sec_exp = merged.groupby("sector", dropna=False)["market_value"].sum().reset_index()
+            sec_exp["Vekt %"] = sec_exp["market_value"] / pmetrics["total_value"] * 100
+            st.dataframe(sec_exp.rename(columns={"sector":"Sektor", "market_value":"Markedsverdi"}), use_container_width=True, hide_index=True)
+            fig = px.bar(sec_exp, x="sector", y="Vekt %", title="Sektoreksponering", template="plotly_dark" if mode=="Mørk" else "plotly_white")
+            st.plotly_chart(fig, use_container_width=True)
+        st.markdown("#### Posisjoner med modellscore")
+        display_cols = [c for c in ["ticker", "sector", "weight", "Conviction Score", "Risk Score", "Opportunity Bucket", "market_value", "pnl"] if c in merged.columns]
+        st.dataframe(merged[display_cols].sort_values("weight", ascending=False), use_container_width=True, hide_index=True)
+
+# -----------------------------
+# Multi-Bagger Radar
+# -----------------------------
+with page[7]:
+    st.markdown("### Multi-Bagger Radar")
+    st.caption("Ser etter asymmetrisk oppside: mindre markedsverdi, vekst, momentum, kvalitet og nok conviction. Dette er høyere risiko og må analyseres manuelt.")
+    r1, r2, r3 = st.columns(3)
+    max_mcap_bn = r1.slider("Maks markedsverdi, mrd", 1, 50, 10, 1)
+    min_mb = r2.slider("Minimum Multi-Bagger Score", 0, 100, 65, 5)
+    min_conv = r3.slider("Minimum Conviction", 0, 100, 60, 5)
+    mb = multibagger_candidates(data, max_market_cap=max_mcap_bn*1e9, min_score=min_mb)
+    mb = mb[mb["Conviction Score"] >= min_conv]
+    m1,m2,m3 = st.columns(3)
+    with m1: kpi_card("Kandidater", str(len(mb)), "Matcher filter")
+    with m2: kpi_card("Beste kandidat", mb.iloc[0]["ticker"] if not mb.empty else "–", "Høyest Multi-Bagger Score")
+    with m3: kpi_card("Median risiko", fmt_num(mb["Risk Score"].median(),0) if not mb.empty else "–", "Blant kandidater")
+    if mb.empty:
+        st.info("Ingen kandidater matcher filtrene. Senk kravene eller screen flere aksjer.")
+    else:
+        cols = ["ticker", "name", "sector", "Tema", "Opportunity Bucket", "Conviction Score", "Multi-Bagger Score", "Rocket Score", "Momentum Score", "Risk Score", "market_cap", "Investment Thesis", "Red Flags"]
+        cols = [c for c in cols if c in mb.columns]
+        st.dataframe(mb[cols].head(30).rename(columns={"ticker":"Ticker", "name":"Selskap", "sector":"Sektor", "market_cap":"Markedsverdi"}), use_container_width=True, hide_index=True)
+        fig = px.scatter(mb, x="Risk Score", y="Multi-Bagger Score", size=mb["market_cap_clean"].fillna(1e9).clip(lower=1e8), color="sector", hover_name="ticker", template="plotly_dark" if mode=="Mørk" else "plotly_white", title="Multi-Bagger Score vs risiko")
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("#### Opportunity Buckets")
+        bucket = data.groupby("Opportunity Bucket").agg(Antall=("ticker", "count"), Conviction=("Conviction Score", "mean"), MultiBagger=("Multi-Bagger Score", "mean"), Risiko=("Risk Score", "mean")).reset_index().sort_values("MultiBagger", ascending=False)
+        st.dataframe(bucket, use_container_width=True, hide_index=True)
+# -----------------------------
+# ChatGPT flow
+# -----------------------------
+with page[8]:
+    st.markdown("### Kopier komplett v11.1.2-analyse til ChatGPT")
     selected_prompt = st.selectbox("Velg aksje for analyseprompt", data_sorted["ticker"].tolist(), key="prompt_select")
     rowp = data_sorted[data_sorted["ticker"] == selected_prompt].iloc[0]
     prompt = make_prompt(rowp)

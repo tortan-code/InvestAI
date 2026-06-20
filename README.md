@@ -1,16 +1,17 @@
-# InvestAI v11.0 – Investment Intelligence
+# InvestAI v11.1.2 Code Edition
 
-Gratis Streamlit-basert analyseverktøy for Oslo Børs.
+Gratis Streamlit-basert investeringsverktøy for Oslo Børs.
 
-## Nytt i v11.0
+## Nytt i v11.1.2
 
-- Conviction Score som ny hovedscore
-- Red Flag Engine
-- Investment Thesis Generator
-- Top Opportunities / beslutningssenter
-- Porteføljeanalyse med vektet conviction og risiko
-- Bedre ChatGPT-prompt med thesis og conviction
-- Robust numerisk datarensing fra gratis datakilder
+- Portfolio Intelligence Pro
+- Diversifiseringsscore
+- Hullanalyse
+- Konsentrasjonsvarsler
+- Multi-Bagger Score
+- Multi-Bagger Radar
+- Opportunity Buckets: Compounder, Rocket, Value, Turnaround, Momentum, Watchlist
+- Dashboard med portefølje- og multibagger-snapshot
 
 ## Start lokalt
 
@@ -19,10 +20,6 @@ python -m pip install -r requirements.txt
 python -m streamlit run app.py
 ```
 
-## Streamlit Cloud
-
-Last opp alle filene i denne mappen til GitHub. Velg `app.py` som main file i Streamlit Cloud.
-
 ## Viktig
 
-Dette er et hobby-/analyseverktøy. Data fra gratis datakilder kan være mangelfull eller feil. Dette er ikke personlig finansiell rådgivning.
+Dette er et hobby-/analyseverktøy. Data kan være mangelfull eller feil. Ikke finansiell rådgivning.

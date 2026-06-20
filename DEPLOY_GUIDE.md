@@ -1,10 +1,9 @@
-# Deploy InvestAI v11.0 til Streamlit Cloud
+# Deploy til Streamlit Cloud
 
-1. Opprett/åpne GitHub-repoet ditt.
-2. Last opp alle filene i denne mappen.
+1. Last opp alle filene i denne mappen til GitHub.
+2. Sørg for at `app.py` og `requirements.txt` ligger i root.
 3. Gå til Streamlit Community Cloud.
-4. Velg repoet.
-5. Main file path: `app.py`.
-6. Trykk Deploy.
+4. Velg repo og sett main file path til `app.py`.
+5. Deploy.
 
-Hvis appen feiler, bruk sidepanelet i appen: `Feilhjelp / kopier feilmelding`, og lim rapporten inn i ChatGPT.
+Ved feil: bruk feilhjelp-panelet i sidebaren og kopier feilrapporten.
